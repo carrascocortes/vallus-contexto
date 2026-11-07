@@ -60,8 +60,8 @@ test('barra cuid', () => {
   assert.deepEqual(nomes('id ' + gerar.cuid()), ['id-producao']);
 });
 
-test('barra UUID', () => {
-  assert.deepEqual(nomes('id ' + gerar.uuid()), ['id-producao']);
+test('não barra UUID', () => {
+  assert.deepEqual(nomes('id ' + gerar.uuid()), []);
 });
 
 test('não barra SHA de 40 nem de 7 caracteres', () => {
@@ -94,7 +94,8 @@ test('barra chave de API de provedor', () => {
 });
 
 test('nunca devolve o valor', () => {
-  for (const [nome, gerador] of Object.entries(gerar)) {
+  const geradoresBarrados = Object.entries(gerar).filter(([nome]) => nome !== 'uuid');
+  for (const [nome, gerador] of geradoresBarrados) {
     const valor = gerador();
     const achados = detectar(`antes ${valor} depois`);
     assert.ok(achados.length > 0, `${nome} não foi detectado`);

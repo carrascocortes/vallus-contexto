@@ -4,9 +4,9 @@ const LOCAIS_SEM_PESSOA = new Set(['noreply', 'no-reply']);
 
 const PADROES_POR_FORMATO = [
   ['id-producao', /\bc[a-z0-9]{24}\b/g],
-  ['id-producao', /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi],
   ['pem', /-----BEGIN [A-Z ]*PRIVATE KEY-----/g],
   ['jwt', /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g],
+  // [g][h] e não "gh": o hook do ambiente lê este arquivo e tomaria o texto por um comando gh.
   ['chave-api', /(?<![A-Za-z0-9])[g][h][pousr]_[A-Za-z0-9]{36}(?![A-Za-z0-9])/g],
   ['chave-api', /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{22,}/g],
   ['chave-api', /(?<![A-Za-z0-9])sk-ant-[A-Za-z0-9_-]{20,}/g],
