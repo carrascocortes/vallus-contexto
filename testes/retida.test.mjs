@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectar } from '../.githooks/lib/padroes.mjs';
 import { lerCabecalho, verificarUuid } from '../.githooks/lib/cabecalho.mjs';
-import { ehRetivel, esboco, garantirRaiz, raizRetidasPadrao, reter } from '../.githooks/lib/retida.mjs';
-import { cpfValido, emailDeFora, uuid } from './gerar.mjs';
+import { ehRetivel, esboco, esbocoMinimo, garantirRaiz, raizRetidasPadrao, reter } from '../.githooks/lib/retida.mjs';
+import { chaveDatabricks, chaveDeAcesso, cpfValido, emailDeFora, uuid } from './gerar.mjs';
 
 const agora = new Date(2026, 10, 6, 14, 30, 5);
 const ENTRADA = 'frentes/minha-frente/memoria/2026-11-05-turno.md';
@@ -120,10 +120,39 @@ test('esboço descarta campo do cabeçalho que tem valor barrado', () => {
 });
 
 test('esboço descarta campo que só o gitleaks barraria', () => {
-  const chaveDeAcesso = 'AKI' + 'A' + 'ABCDEFGHIJKLMNOP';
-  const texto = esboco(ENTRADA, entradaOriginal({ autor: chaveDeAcesso }), ['cpf'], agora);
+  const chave = chaveDeAcesso();
+  const texto = esboco(ENTRADA, entradaOriginal({ autor: chave }), ['cpf'], agora);
   assert.equal(lerCabecalho(texto).campos.has('autor'), false);
-  assert.ok(!texto.includes(chaveDeAcesso));
+  assert.ok(!texto.includes(chave));
+});
+
+test('esboço mínimo de entrada e de passagem passa na trava e não leva campo do original', () => {
+  const entrada = esbocoMinimo(ENTRADA, ['cpf'], agora);
+  const passagem = esbocoMinimo(PASSAGEM, ['cpf'], agora);
+  for (const texto of [entrada, passagem]) {
+    assert.deepEqual(detectar(texto), []);
+    assert.deepEqual(verificarUuid(texto), []);
+  }
+  assert.deepEqual([...lerCabecalho(entrada).campos], [['desfecho', 'retido'], ['motivo', 'trava: cpf']]);
+  assert.equal(lerCabecalho(passagem).campos.size, 0);
+  assert.match(passagem, /Texto retido pela trava em 2026-11-06\./);
+});
+
+test('reter grava o esboço mínimo quando a validação recusa o completo', () => {
+  const original = entradaOriginal({ sessao: uuid() }).replace('modelo: claude-opus-5-5', `modelo: ${chaveDatabricks()}`);
+  const raizClone = clone({ [ENTRADA]: original });
+  const raizRetidas = join(pastaTemporaria(), 'retidas');
+  const recusa = (texto) => !texto.includes('dapi');
+  reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: recusa });
+  assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), esbocoMinimo(ENTRADA, ['cpf'], agora));
+});
+
+test('reter grava o esboço completo quando a validação aceita', () => {
+  const original = entradaOriginal();
+  const raizClone = clone({ [ENTRADA]: original });
+  const raizRetidas = join(pastaTemporaria(), 'retidas');
+  reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: () => true });
+  assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), esboco(ENTRADA, original, ['cpf'], agora));
 });
 
 test('esboço descarta campo fora do formato estrito', () => {
@@ -226,6 +255,17 @@ test('reter recusa raizRetidas dentro do clone', () => {
   assert.equal(existsSync(join(raizClone, 'retidas')), false);
 });
 
+test('reter recusa raizRetidas cujo nome começa por ".." dentro do clone e aceita a vizinha', () => {
+  const raizClone = clone({ [ENTRADA]: entradaOriginal() });
+  assert.throws(
+    () => reter({ raizClone, caminho: ENTRADA, raizRetidas: join(raizClone, '..retidas'), padroes: ['cpf'], agora }),
+    (erro) => erro.code === 'RETENCAO_FALHOU',
+  );
+  assert.equal(existsSync(join(raizClone, '..retidas')), false);
+  const vizinha = join(pastaTemporaria(), '..retidas');
+  assert.ok(reter({ raizClone, caminho: ENTRADA, raizRetidas: vizinha, padroes: ['cpf'], agora }).destino.startsWith(vizinha));
+});
+
 test('raizRetidasPadrao respeita VALLUS_RETIDAS', () => {
   const outra = join(tmpdir(), 'outra-raiz');
   comAmbiente({ VALLUS_RETIDAS: outra }, () => assert.equal(raizRetidasPadrao(), outra));
@@ -251,6 +291,16 @@ test('garantirRaiz com padrao falha sem deixar a raiz e acerta na chamada seguin
   assert.deepEqual(readdirSync(join(raiz, '..')), []);
   garantirRaiz(raiz, { padrao: true });
   assert.equal(entradasDaAcl(raiz).entradas.length, 1);
+});
+
+test('garantirRaiz com padrao lança quando o próprio icacls falha e não deixa raiz nem temporária', NO_WINDOWS, () => {
+  const raiz = join(pastaTemporaria(), 'retidas');
+  assert.throws(
+    () => comAmbiente({ USERNAME: `conta-que-nao-existe-${uuid().slice(0, 8)}` }, () => garantirRaiz(raiz, { padrao: true })),
+    (erro) => erro.code === 'RETENCAO_FALHOU',
+  );
+  assert.equal(existsSync(raiz), false);
+  assert.deepEqual(readdirSync(join(raiz, '..')), []);
 });
 
 test('reter na raiz padrão aplica a ACL, sem tocar a raiz real', NO_WINDOWS, () => {

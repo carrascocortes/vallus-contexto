@@ -12,8 +12,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { contemUuid, ehUuidExato, lerCabecalho } from './cabecalho.mjs';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { contemUuid, ehUuidExato, lerCabecalho, verificarUuid } from './cabecalho.mjs';
 import { detectar } from './padroes.mjs';
 
 const SEGMENTO = '[A-Za-z0-9._-]+';
@@ -81,19 +81,35 @@ function valorCopiavel(campo, valor) {
   return campo === 'sessao' || (detectar(valor).length === 0 && !contemUuid(valor));
 }
 
-export function esboco(caminho, original, padroes, agora) {
-  const tipo = CAMINHO_DE_PASSAGEM.test(caminho) ? 'passagem' : 'entrada';
-  const campos = lerCabecalho(original)?.campos ?? new Map();
-  const linhas = ['---'];
-  for (const campo of CAMPOS_COPIADOS[tipo]) {
-    const valor = campos.get(campo);
-    if (valor !== undefined && valorCopiavel(campo, valor)) linhas.push(`${campo}: ${valor}`);
-  }
+function tipoDe(caminho) {
+  return CAMINHO_DE_PASSAGEM.test(caminho) ? 'passagem' : 'entrada';
+}
+
+function montarEsboco(tipo, camposCopiados, padroes, agora) {
+  const linhas = ['---', ...camposCopiados];
   if (tipo === 'entrada') {
     linhas.push('desfecho: retido', `motivo: trava: ${[...new Set(padroes)].join(', ')}`);
   }
   linhas.push('---', `Texto retido pela trava em ${dataLocal(agora)}. Está fora do repositório até o PO liberar.`, '');
   return linhas.join('\n');
+}
+
+export function esboco(caminho, original, padroes, agora) {
+  const tipo = tipoDe(caminho);
+  const campos = lerCabecalho(original)?.campos ?? new Map();
+  const copiados = CAMPOS_COPIADOS[tipo]
+    .filter((campo) => campos.has(campo) && valorCopiavel(campo, campos.get(campo)))
+    .map((campo) => `${campo}: ${campos.get(campo)}`);
+  return montarEsboco(tipo, copiados, padroes, agora);
+}
+
+// Para quando nem o esboço com campos copiados passa na validação: não leva nada do original.
+export function esbocoMinimo(caminho, padroes, agora) {
+  return montarEsboco(tipoDe(caminho), [], padroes, agora);
+}
+
+function esbocoSemAchados(texto) {
+  return detectar(texto).length === 0 && verificarUuid(texto).length === 0;
 }
 
 function restringirAoUsuario(pasta) {
@@ -111,7 +127,8 @@ function criarRaizRestrita(raiz) {
     renameSync(temporaria, raiz);
   } catch (erro) {
     tentarRemover(temporaria, { recursive: true });
-    throw erro;
+    // Outro processo criou a raiz primeiro, e a criou do mesmo jeito.
+    if (!(existsSync(raiz) && statSync(raiz).isDirectory())) throw erro;
   }
 }
 
@@ -139,10 +156,11 @@ function destinoLivre(raiz, slug, caminho, agora) {
 
 function estaDentro(pasta, caminho) {
   const relativo = relative(resolve(pasta), resolve(caminho));
-  return relativo !== '' && !relativo.startsWith('..') && !isAbsolute(relativo);
+  const saiDaPasta = relativo === '..' || relativo.startsWith(`..${sep}`) || isAbsolute(relativo);
+  return relativo !== '' && !saiDaPasta;
 }
 
-export function reter({ raizClone, caminho, raizRetidas, padroes, agora }) {
+export function reter({ raizClone, caminho, raizRetidas, padroes, agora, validarEsboco = esbocoSemAchados }) {
   const origem = join(raizClone, caminho);
   const temporario = `${origem}.retida.tmp`;
   try {
@@ -161,7 +179,8 @@ export function reter({ raizClone, caminho, raizRetidas, padroes, agora }) {
       tentarRemover(destino);
       throw new Error('a cópia retida tem tamanho diferente do original');
     }
-    writeFileSync(temporario, esboco(caminho, original, padroes, agora));
+    const completo = esboco(caminho, original, padroes, agora);
+    writeFileSync(temporario, validarEsboco(completo) ? completo : esbocoMinimo(caminho, padroes, agora));
     renameSync(temporario, origem);
     return { destino };
   } catch (erro) {

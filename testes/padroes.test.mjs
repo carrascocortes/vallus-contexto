@@ -123,7 +123,8 @@ test('barra chave de API de provedor', () => {
 });
 
 test('nunca devolve o valor', () => {
-  const geradoresBarrados = Object.entries(gerar).filter(([nome]) => nome !== 'uuid');
+  const soOGitleaksBarra = ['uuid', 'chaveDeAcesso', 'chaveDatabricks'];
+  const geradoresBarrados = Object.entries(gerar).filter(([nome]) => !soOGitleaksBarra.includes(nome));
   for (const [nome, gerador] of geradoresBarrados) {
     const valor = gerador();
     const achados = detectar(`antes ${valor} depois`);

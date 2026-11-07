@@ -115,3 +115,11 @@ export function conexaoSemUsuario() {
 export function emailDeFora() {
   return sorteio('abcdefghijklmnopqrstuvwxyz', 8) + '@' + 'exemplo' + '.org';
 }
+
+export function chaveDeAcesso() {
+  return 'AKI' + 'A' + sorteio(MAIUSCULAS_E_DIGITOS, 16);
+}
+
+export function chaveDatabricks() {
+  return 'dapi' + randomBytes(16).toString('hex');
+}
