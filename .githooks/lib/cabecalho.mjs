@@ -6,8 +6,14 @@ const LINHA_QUE_PARECE_SESSAO = /^[#\s]*sessao\s*:/i;
 const CAMPO = /^([^\s:#][^\s:]*):(.*)$/;
 const COMENTARIO_DE_FIM_DE_LINHA = /\s+#.*$/;
 
+const UUID_EXATO = new RegExp(`^${UUID.source}$`);
+
 export function contemUuid(texto) {
   return UUID.test(texto);
+}
+
+export function ehUuidExato(valor) {
+  return UUID_EXATO.test(valor);
 }
 
 function linhasDe(texto) {
