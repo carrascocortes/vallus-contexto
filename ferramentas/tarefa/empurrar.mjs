@@ -15,6 +15,8 @@ const PADROES = {
 };
 const MAIN = 'refs/heads/main';
 const ZEROS = '0'.repeat(40);
+const MAX_BUFFER = 64 * 1024 * 1024;
+const TIMEOUT_MS = 5 * 60 * 1000;
 const TOCA_CI = /^\.(github|githooks)\//;
 
 /** Decide a ação do ciclo só a partir do estado já lido; não faz I/O. */
@@ -36,7 +38,7 @@ export function decidir(estado) {
 // --- Git ---
 
 function comandoSsh({ chave, knownHosts, sshConfig }) {
-  const caminho = (valor) => `"${valor.replaceAll('\\', '/')}"`;
+  const caminho = (valor) => `'${valor.replaceAll('\\', '/').replaceAll("'", "'\\''")}'`;
   return [
     'ssh',
     `-i ${caminho(chave)}`,
@@ -45,6 +47,9 @@ function comandoSsh({ chave, knownHosts, sshConfig }) {
     `-F ${caminho(sshConfig)}`,
     '-o BatchMode=yes',
     '-o StrictHostKeyChecking=yes',
+    '-o ConnectTimeout=30',
+    '-o ServerAliveInterval=15',
+    '-o ServerAliveCountMax=4',
   ].join(' ');
 }
 
@@ -56,8 +61,15 @@ function rodarGit(opcoes, args, { rede = false } = {}) {
   const env = { ...process.env };
   delete env.GIT_SSH_COMMAND;
   if (rede && ehUrlSsh(opcoes.url)) env.GIT_SSH_COMMAND = comandoSsh(opcoes);
-  const resultado = spawnSync('git', args, { cwd: opcoes.clone, env, encoding: 'utf8' });
-  if (resultado.error) throw resultado.error;
+  const resultado = spawnSync('git', args, {
+    cwd: opcoes.clone,
+    env,
+    encoding: 'utf8',
+    maxBuffer: opcoes.maxBuffer,
+    timeout: rede ? TIMEOUT_MS : undefined,
+    windowsHide: true,
+  });
+  if (resultado.error) throw new ErroDeLeitura(`falha ao executar o Git: ${resultado.error.code ?? resultado.error.message}`);
   return { status: resultado.status, saida: resultado.stdout, erro: resultado.stderr };
 }
 
@@ -79,10 +91,12 @@ function linhas(texto) {
   return texto.split('\n').filter(Boolean);
 }
 
+// O padrão do ls-remote também casa refs como refs/foo/refs/heads/main: só vale a linha da referência exata.
 function lerRemoto(opcoes) {
   const resultado = rodarGit(opcoes, ['ls-remote', opcoes.url, MAIN], { rede: true });
-  if (resultado.status !== 0) return null;
-  return linhas(resultado.saida)[0]?.split('\t')[0] ?? '';
+  if (resultado.status !== 0) return { sha: null, detalhe: primeiraLinha(resultado.erro) || `saiu com ${resultado.status}` };
+  const linha = linhas(resultado.saida).map((l) => l.split('\t')).find(([, nome]) => nome === MAIN);
+  return { sha: linha?.[0] ?? '' };
 }
 
 function arquivosDoCommit(opcoes, sha) {
@@ -101,8 +115,8 @@ function lerEstado(opcoes) {
   try {
     const hooksPath = lerHooksPath(opcoes);
     const local = lerOuFalhar(opcoes, ['rev-parse', '--verify', MAIN]).trim();
-    const remoto = lerRemoto(opcoes);
-    const estado = { hooksPath, local, remoto, remotoEhAncestral: false, merges: [], commits: [] };
+    const { sha: remoto, detalhe: detalheDoRemoto } = lerRemoto(opcoes);
+    const estado = { hooksPath, local, remoto, detalheDoRemoto, remotoEhAncestral: false, merges: [], commits: [] };
     if (remoto === null || remoto === local) return estado;
 
     let alcance = MAIN;
@@ -128,32 +142,36 @@ function rodarTrava(opcoes, remoto, alvo) {
   const resultado = spawnSync(
     process.execPath,
     [join(opcoes.clone, '.githooks', 'trava.mjs'), '--push', remoto || ZEROS, alvo],
-    { cwd: opcoes.clone, env, encoding: 'utf8' },
+    { cwd: opcoes.clone, env, encoding: 'utf8', timeout: TIMEOUT_MS, windowsHide: true },
   );
-  if (resultado.error) throw resultado.error;
-  return resultado.status;
+  return resultado.error ? null : resultado.status;
 }
 
 function empurrar(opcoes, alvo) {
-  const resultado = rodarGit(opcoes, ['push', '--quiet', opcoes.url, `${alvo}:${MAIN}`], { rede: true });
-  if (resultado.status === 0) {
+  try {
+    const resultado = rodarGit(opcoes, ['push', '--quiet', opcoes.url, `${alvo}:${MAIN}`], { rede: true });
+    if (resultado.status !== 0) return primeiraLinha(resultado.erro) || `o push saiu com ${resultado.status}`;
     rodarGit(opcoes, ['update-ref', 'refs/remotes/origin/main', alvo]);
     return undefined;
+  } catch (erro) {
+    if (!(erro instanceof ErroDeLeitura)) throw erro;
+    return erro.message;
   }
-  return primeiraLinha(resultado.erro) || `o push saiu com ${resultado.status}`;
 }
 
 // --- aviso e registro ---
 
-function chaveDaSituacao({ decisao, estado, falhaDoPush, alvo, dia }) {
-  if (falhaDoPush !== undefined) return `falha-push|${falhaDoPush}|${alvo}`;
-  if (decisao.acao === 'parar') return `parar|${decisao.motivo}|${estado.local}`;
+function chaveDaSituacao({ decisao, falhaDoPush, dia }) {
+  if (falhaDoPush !== undefined) return `falha-push|${falhaDoPush}|${dia}`;
+  if (decisao.acao === 'parar') return `parar|${decisao.motivo}|${dia}`;
   if (decisao.retido) return `retido|${decisao.retido}|${dia}`;
   return 'ok';
 }
 
 function textoDoAviso(chave) {
-  const [tipo, detalhe] = chave.split('|');
+  const tipo = chave.slice(0, chave.indexOf('|'));
+  const meio = chave.slice(tipo.length + 1);
+  const detalhe = meio.slice(0, meio.lastIndexOf('|'));
   if (tipo === 'parar') return { titulo: 'Backup do contexto parado', texto: detalhe };
   if (tipo === 'retido') {
     return { titulo: 'Commit retido no backup', texto: `O commit ${detalhe.slice(0, 7)} mexe em .github ou .githooks. Confira e empurre.` };
@@ -176,22 +194,47 @@ function gravar(arquivo, conteudo, { anexar = false } = {}) {
   else writeFileSync(arquivo, conteudo);
 }
 
+const OPCOES = {
+  '--clone': 'clone',
+  '--url': 'url',
+  '--chave': 'chave',
+  '--known-hosts': 'knownHosts',
+  '--ssh-config': 'sshConfig',
+  '--estado': 'estado',
+  '--log': 'log',
+};
+
 function lerOpcoes(argv) {
-  const valores = {};
-  for (let i = 0; i < argv.length; i += 2) valores[argv[i]] = argv[i + 1];
-  return {
-    clone: valores['--clone'] ?? PADROES.clone,
-    url: valores['--url'] ?? PADROES.url,
-    chave: valores['--chave'] ?? PADROES.chave,
-    knownHosts: valores['--known-hosts'] ?? PADROES.knownHosts,
-    sshConfig: valores['--ssh-config'] ?? PADROES.sshConfig,
-    estado: valores['--estado'] ?? PADROES.estado,
-    log: valores['--log'] ?? PADROES.log,
-  };
+  const opcoes = { ...PADROES };
+  for (let i = 0; i < argv.length; i += 2) {
+    const nome = OPCOES[argv[i]];
+    if (!nome) return { erro: `opção desconhecida: ${argv[i]}` };
+    if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) return { erro: `falta o valor de ${argv[i]}` };
+    opcoes[nome] = argv[i + 1];
+  }
+  return { opcoes };
+}
+
+function diaLocal(data) {
+  const dois = (n) => String(n).padStart(2, '0');
+  return `${data.getFullYear()}-${dois(data.getMonth() + 1)}-${dois(data.getDate())}`;
+}
+
+function registrar(opcoes, { avisar, agora, chave, descricao }) {
+  const precisaAvisar = chave !== 'ok' && chave !== lerChaveAnterior(opcoes.estado);
+  let canalFalhou = false;
+  if (precisaAvisar) {
+    const { titulo, texto } = textoDoAviso(chave);
+    canalFalhou = avisar(titulo, texto) !== 0;
+  }
+  // Sem o aviso entregue a chave não é gravada, e o ciclo seguinte tenta de novo.
+  if (!canalFalhou) gravar(opcoes.estado, `${chave}\n`);
+  const linhaDoCanal = canalFalhou ? `${agora.toISOString()} falha do canal de aviso\n` : '';
+  gravar(opcoes.log, `${agora.toISOString()} ${descricao}\n${linhaDoCanal}`, { anexar: true });
 }
 
 function ciclo(opcoes, { avisar, agora }) {
-  const dia = agora.toISOString().slice(0, 10);
+  const dia = diaLocal(agora);
   const estado = lerEstado(opcoes);
   let decisao = decidir(estado);
 
@@ -203,32 +246,42 @@ function ciclo(opcoes, { avisar, agora }) {
   }
 
   const falhaDoPush = decisao.acao === 'empurrar' ? empurrar(opcoes, decisao.alvo) : undefined;
-  const chave = chaveDaSituacao({ decisao, estado, falhaDoPush, alvo: decisao.alvo, dia });
-  const registro = [`${agora.toISOString()} ${decisao.acao}`, decisao.motivo, falhaDoPush, `chave=${chave}`]
-    .filter(Boolean)
-    .join(' | ');
-
-  const anterior = lerChaveAnterior(opcoes.estado);
-  const precisaAvisar = chave !== 'ok' && chave !== anterior;
-  gravar(opcoes.estado, `${chave}\n`);
-
-  let linhaDoCanal = '';
-  if (precisaAvisar) {
-    const { titulo, texto } = textoDoAviso(chave);
-    if (avisar(titulo, texto) !== 0) linhaDoCanal = `${agora.toISOString()} falha do canal de aviso\n`;
-  }
-  gravar(opcoes.log, `${registro}\n${linhaDoCanal}`, { anexar: true });
+  const chave = chaveDaSituacao({ decisao, falhaDoPush, dia });
+  const detalheDoRemoto = estado.remoto === null ? estado.detalheDoRemoto : undefined;
+  const descricao = [decisao.acao, decisao.motivo, detalheDoRemoto, falhaDoPush, `chave=${chave}`].filter(Boolean).join(' | ');
+  registrar(opcoes, { avisar, agora, chave, descricao });
 }
 
-/** Um ciclo da tarefa agendada. Nunca lança: o que der errado vai para o log. */
-export function main(argv, { avisar, agora = new Date() }) {
-  const opcoes = lerOpcoes(argv);
+function registrarOpcaoInvalida(argv, erro, agora) {
+  const posicao = argv.indexOf('--log');
+  const arquivo = posicao === -1 ? undefined : argv[posicao + 1];
+  if (!arquivo || arquivo.startsWith('--')) return;
+  try {
+    gravar(arquivo, `${agora.toISOString()} ${erro}\n`, { anexar: true });
+  } catch {
+    // sem onde registrar, nada mais a fazer
+  }
+}
+
+/** Um ciclo da tarefa agendada. Não lança: o que der errado vira aviso e linha de log. Saída 2 = opção inválida. */
+export function main(argv, { avisar, agora = new Date(), maxBuffer = MAX_BUFFER }) {
+  const { opcoes: lidas, erro } = lerOpcoes(argv);
+  if (erro) {
+    registrarOpcaoInvalida(argv, erro, agora);
+    return 2;
+  }
+  const opcoes = { ...lidas, maxBuffer };
   try {
     ciclo(opcoes, { avisar, agora });
     return 0;
-  } catch (erro) {
+  } catch (falha) {
     try {
-      gravar(opcoes.log, `${agora.toISOString()} erro inesperado: ${erro.message}\n`, { anexar: true });
+      registrar(opcoes, {
+        avisar,
+        agora,
+        chave: `parar|erro inesperado|${diaLocal(agora)}`,
+        descricao: `erro inesperado: ${primeiraLinha(String(falha.message))}`,
+      });
     } catch {
       // sem onde registrar, nada mais a fazer
     }

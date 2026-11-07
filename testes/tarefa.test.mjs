@@ -10,6 +10,10 @@ import * as gerar from './gerar.mjs';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pastas = [];
+const ambienteOriginal = {
+  GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM,
+  GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+};
 
 function pastaTemporaria() {
   const pasta = mkdtempSync(join(tmpdir(), 'tarefa-'));
@@ -17,7 +21,15 @@ function pastaTemporaria() {
   return pasta;
 }
 
+process.env.GIT_CONFIG_NOSYSTEM = '1';
+process.env.GIT_CONFIG_GLOBAL = join(pastaTemporaria(), 'config-vazio');
+writeFileSync(process.env.GIT_CONFIG_GLOBAL, '');
+
 after(() => {
+  for (const [nome, valor] of Object.entries(ambienteOriginal)) {
+    if (valor === undefined) delete process.env[nome];
+    else process.env[nome] = valor;
+  }
   for (const pasta of pastas) rmSync(pasta, { recursive: true, force: true });
 });
 
@@ -123,9 +135,13 @@ function cenario({ hooksPath = '.githooks' } = {}) {
     avisos,
     estado,
     log,
-    rodar({ url = remoto, agora = new Date('2026-11-07T10:00:00Z') } = {}) {
+    rodar({ url = remoto, agora = new Date('2026-11-07T10:00:00Z'), canal = () => 0, maxBuffer } = {}) {
       const argv = ['--clone', clone, '--url', url, '--estado', estado, '--log', log];
-      return main(argv, { avisar: (titulo, texto) => (avisos.push({ titulo, texto }), 0), agora });
+      const avisar = (titulo, texto) => {
+        avisos.push({ titulo, texto });
+        return canal(avisos.length);
+      };
+      return main(argv, { avisar, agora, maxBuffer });
     },
     remotoMain: () => principalDe(remoto),
     estadoGravado: () => (existsSync(estado) ? readFileSync(estado, 'utf8').trim() : ''),
@@ -302,4 +318,95 @@ test('um commit com CPF feito com --no-verify não é empurrado e avisa', () => 
   assert.equal(c.remotoMain(), limpo);
   assert.equal(c.avisos.length, 1);
   assert.match(c.estadoGravado(), /^parar\|a trava recusou o intervalo\|/);
+});
+
+test('falha ao ler o Git (saída grande demais) avisa e grava a situação, sem lançar', () => {
+  const c = cenario();
+  for (let i = 0; i < 200; i += 1) {
+    const caminho = join(c.clone, 'docs', `${'n'.repeat(60)}-${i}.md`);
+    mkdirSync(dirname(caminho), { recursive: true });
+    writeFileSync(caminho, 'x\n');
+  }
+  assert.equal(git(['add', '--', 'docs'], { cwd: c.clone }).status, 0);
+  assert.equal(git(['commit', '--quiet', '--no-verify', '-m', 'muitos'], { cwd: c.clone }).status, 0);
+  assert.doesNotThrow(() => c.rodar({ maxBuffer: 4096 }));
+  assert.equal(c.avisos.length, 1);
+  assert.match(c.estadoGravado(), /^parar\|erro do Git: falha ao executar o Git: ENOBUFS\|/);
+  c.rodar({ maxBuffer: 4096 });
+  assert.equal(c.avisos.length, 1);
+});
+
+test('a ref-isca refs/foo/refs/heads/main não vale como o main do remoto', () => {
+  const c = cenario();
+  const a = commitar(c.clone, 'docs/a.md');
+  c.rodar();
+  commitar(c.clone, 'docs/cpf.md', `cpf ${gerar.cpfValido()}\n`);
+  const isca = git(['rev-parse', 'HEAD'], { cwd: c.clone }).stdout.toString('utf8').trim();
+  assert.equal(git(['push', '--quiet', c.remoto, `${isca}:refs/foo/refs/heads/main`], { cwd: c.clone }).status, 0);
+  commitar(c.clone, 'docs/limpo.md');
+  c.rodar();
+  assert.equal(c.remotoMain(), a);
+  assert.match(c.estadoGravado(), /^parar\|a trava recusou o intervalo\|/);
+});
+
+test('parada persistente com commits novos no mesmo dia avisa uma vez', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  for (const nome of ['a', 'b', 'c']) {
+    commitar(c.clone, `docs/${nome}.md`);
+    c.rodar();
+  }
+  assert.equal(c.avisos.length, 1);
+});
+
+test('parada persistente volta a avisar no dia seguinte', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ agora: new Date(2026, 10, 7, 12) });
+  c.rodar({ agora: new Date(2026, 10, 8, 12) });
+  assert.equal(c.avisos.length, 2);
+});
+
+test('canal de aviso que falha: a chave não é gravada e o ciclo seguinte avisa de novo', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ canal: (n) => (n === 1 ? 1 : 0) });
+  assert.equal(c.estadoGravado(), '');
+  c.rodar({ canal: (n) => (n === 1 ? 1 : 0) });
+  assert.equal(c.avisos.length, 2);
+  assert.match(c.estadoGravado(), /^parar\|hook desligado\|/);
+  assert.match(readFileSync(c.log, 'utf8'), /falha do canal de aviso/);
+  c.rodar();
+  assert.equal(c.avisos.length, 2);
+});
+
+test('motivo com barra vertical não é cortado no texto do aviso', () => {
+  const c = cenario();
+  const gancho = join(c.remoto, 'hooks', 'pre-receive');
+  writeFileSync(gancho, '#!/bin/sh\necho "recusado | por regra" >&2\nexit 1\n');
+  chmodSync(gancho, 0o755);
+  commitar(c.clone, 'docs/a.md');
+  c.rodar();
+  assert.match(c.avisos[0].texto, /recusado \| por regra/);
+});
+
+test('o erro do ls-remote vai para o log', () => {
+  const c = cenario();
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ url: join(pastaTemporaria(), 'nao-existe.git') });
+  assert.match(readFileSync(c.log, 'utf8'), /GitHub inacessível \| \S.*nao-existe/);
+});
+
+test('opção desconhecida, sem valor ou com sinal de igual sai 2, sem ciclo, e registra no log', () => {
+  const c = cenario();
+  commitar(c.clone, 'docs/a.md');
+  const avisar = () => 0;
+  for (const argv of [
+    ['--clone', c.clone, '--url=' + c.remoto, '--log', c.log],
+    ['--clone', c.clone, '--desconhecida', 'x', '--log', c.log],
+    ['--log', c.log, '--clone'],
+  ]) {
+    assert.equal(main(argv, { avisar }), 2);
+  }
+  assert.equal(c.remotoMain(), '');
+  assert.equal(readFileSync(c.log, 'utf8').trim().split('\n').length, 3);
 });
