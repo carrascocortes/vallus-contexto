@@ -2,8 +2,8 @@
 
 **Data:** 2026-11-05
 **Estado:** proposta do Claude. O PO decidiu as perguntas QC1 a QC13 em 2026-11-05 (seção 2). Está neste
-repositório desde o primeiro commit, feito pelo PO na F0 (QC10). A F0 terminou em 2026-11-06, com os aceites cumpridos
-e uma conferência fora deles ainda pendente (seção 6). As escolhas marcadas como do Claude seguem vetáveis.
+repositório desde o primeiro commit, feito pelo PO na F0 (QC10). A F0 terminou em 2026-11-06, com todos os aceites
+cumpridos (seção 6). As escolhas marcadas como do Claude seguem vetáveis.
 **Frente própria**, decidida pelo PO em 05/11 (D9 do adendo do projeto 2). Não faz parte do projeto 2, mas a pasta da
 frente do projeto 2 passa a morar aqui (seção 4.8), e a F1 dele depende disso.
 **Fontes lidas em 05/11:** o adendo do projeto 2 na versão do commit `ffc33c5` (21:31, já com a D3 e a D7 a D9
@@ -517,13 +517,13 @@ que não são segredo); o e-mail do PO como autor de commit.
 
    **Limites:** é detecção depois do push, não prevenção. Quem escreve no clone consegue mudar esses arquivos, e as
    sessões os leem antes de o aviso existir (seção 7). No push, o GitHub roda o workflow na versão do commit enviado, e
-   o push pela chave de deploy dispara o workflow (documentação do Actions, seção 6): um commit que apaga o job de aviso
-   junto com a mudança que ele avisaria sobe sem disparar nada, e o `gitleaks` do CI cai junto (QC12). Se o CI ler os
-   padrões de `.githooks/`, uma mudança ali enfraquece o pre-commit e o CI juntos; é mais um motivo para a tarefa reter
-   o commit em `.githooks/` (seção 4.6). O aviso pega mudança descuidada, não quem quer burlar. A F0 mostrou que
-   a chave de deploy altera o workflow e que o plano não tem regra de push por caminho; com o que ela testou, nada no
-   GitHub reduz isso (QC12). O push protection de segredo do GitHub em repositório privado pessoal pode ser pago; fica
-   para o checklist de fornecedor (skill `fornecedor`), e não se conta com ele.
+   o push pela chave de deploy dispara o workflow (documentação do Actions e aba Actions, seção 6): um commit que apaga
+   o job de aviso junto com a mudança que ele avisaria sobe sem disparar nada, e o `gitleaks` do CI cai junto (QC12).
+   Se o CI ler os padrões de `.githooks/`, uma mudança ali enfraquece o pre-commit e o CI juntos; é mais um motivo para
+   a tarefa reter o commit em `.githooks/` (seção 4.6). O aviso pega mudança descuidada, não quem quer burlar. A F0
+   mostrou que a chave de deploy altera o workflow e que o plano não tem regra de push por caminho; com o que ela
+   testou, nada no GitHub reduz isso (QC12). O push protection de segredo do GitHub em repositório privado pessoal pode
+   ser pago; fica para o checklist de fornecedor (skill `fornecedor`), e não se conta com ele.
 5. **Revisão periódica do PO** sobre as lições e uma amostra das entradas. É a única camada que pega prosa de cliente.
 
 **Se vazar:** segredo é tratado como comprometido e rotacionado na hora, antes de qualquer limpeza. Tirar do histórico
@@ -737,9 +737,11 @@ conteúdo migrado.
     organização (seção 7);
   - chave de deploy com escrita age como colaborador e não tem restrição de workflow, o que bate com o teste (a).
 
-  Fora dos aceites, fica uma conferência: ver na aba Actions do repositório se o workflow provisório rodou no push do
-  `44ead89`. A documentação já sustenta as duas premissas da seção 4.5; a aba as confirma neste repositório. Quem
-  confere é o PO, antes do primeiro aceite da F1 que depende do CI.
+  Fora dos aceites, o PO conferiu a aba Actions do repositório no mesmo dia: o workflow provisório `aviso` rodou uma vez
+  (execução 1), no push do `44ead89`, no main, e terminou verde em 6 s. O GitHub mostra o push como feito pela conta do
+  PO, porque a documentação de eventos atribui o push por chave de deploy ao administrador que a cadastrou. Isso
+  confirma neste repositório as duas premissas da seção 4.5: o push pela chave dispara o workflow, e roda o workflow
+  do commit enviado, porque antes desse push o main não tinha workflow nenhum.
 - **F1. Esqueleto, contrato e tarefa.** `LEIA-ME.md`, estrutura da seção 4.1, `.gitattributes`, pre-commit, CI, modelos
   de `frente.md`, `passagem.md`, entrada, decisão e lição, e a tarefa agendada.
   - **A tarefa nasce aqui** (QC5), com a chave da F0, antes dos aceites que dependem de push: nenhuma sessão faz push. O
