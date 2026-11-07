@@ -27,7 +27,7 @@ export function git(args, { cwd, env, input } = {}) {
   const resultado = spawnSync('git', args, {
     cwd,
     input,
-    env: { ...ambienteBase(), ...env, ...identidade },
+    env: { ...ambienteBase(), ...identidade, ...env },
   });
   if (resultado.error) throw resultado.error;
   if (resultado.status === null) {

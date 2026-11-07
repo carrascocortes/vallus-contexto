@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { conferirCaminhos, conferirMensagem, conferirMensagemDoCommit, conferirTexto } from './lib/conferir.mjs';
+import {
+  conferirCaminhos,
+  conferirIdentidadesDoCommit,
+  conferirIdentidadesDoCommitEmCurso,
+  conferirMensagem,
+  conferirMensagemDoCommit,
+  conferirTexto,
+} from './lib/conferir.mjs';
 import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto, lerArquivo } from './lib/git.mjs';
 import { commitsDoPush } from './lib/push.mjs';
 import { ehRetivel, raizRetidasPadrao, reter } from './lib/retida.mjs';
@@ -22,7 +29,13 @@ function descreverMensagem({ ref, linha, padrao }) {
   return `mensagem de commit${commit}: ${onde}${padrao}`;
 }
 
-function descrever({ caminho, linha, padrao, nomeBarrado, mensagem, ref }) {
+function descreverIdentidade({ ref, papel, padrao }) {
+  const commit = ref ? ` (commit ${ref.slice(0, 7)})` : '';
+  return `${papel} do commit: ${padrao}${commit}`;
+}
+
+function descrever({ caminho, linha, padrao, nomeBarrado, mensagem, papel, ref }) {
+  if (papel) return descreverIdentidade({ ref, papel, padrao });
   if (mensagem) return descreverMensagem({ ref, linha, padrao });
   const onde = nomeBarrado ? '(arquivo de nome barrado)' : caminho;
   return linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`;
@@ -40,13 +53,17 @@ function conferirIndice() {
 
 function conferirCommit(sha) {
   const ref = exigirObjeto(sha);
-  return [...conferirMensagemDoCommit(ref, cwd), ...conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd })];
+  return [
+    ...conferirIdentidadesDoCommit(ref, cwd),
+    ...conferirMensagemDoCommit(ref, cwd),
+    ...conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd }),
+  ];
 }
 
 // O Git passa ao commit-msg o arquivo com a mensagem inteira, inclusive as linhas de comentário que `-m` mantém.
 function conferirArquivoDeMensagem(arquivo) {
   if (!arquivo) throw new Error('falta o arquivo da mensagem');
-  return conferirMensagem(readFileSync(arquivo, 'utf8'));
+  return [...conferirIdentidadesDoCommitEmCurso(cwd), ...conferirMensagem(readFileSync(arquivo, 'utf8'))];
 }
 
 function conferirArvore() {

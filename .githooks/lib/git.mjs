@@ -55,8 +55,10 @@ export function arquivosMudados(ref, cwd) {
   return caminhosDoNameStatus(rodarGit(args, { cwd }).stdout);
 }
 
+/** `ref` nulo é o índice do momento. */
 export function arquivosDaArvore(ref, cwd) {
-  return separarPorNulo(rodarGit(['ls-tree', '-r', '-z', '--name-only', ref], { cwd }).stdout);
+  const args = ref === null ? ['ls-files', '-z'] : ['ls-tree', '-r', '-z', '--name-only', ref];
+  return separarPorNulo(rodarGit(args, { cwd }).stdout);
 }
 
 function especificacao(ref, caminho) {
@@ -74,7 +76,8 @@ export function lerSeExiste(ref, caminho, cwd) {
 
 // Ao contrário de `arquivosMudados`, conta também o que o commit apagou: apagar um caminho vigiado é tocar nele.
 export function caminhosTocados(ref, cwd) {
-  return separarPorNulo(rodarGit(argumentosDoDiffTree('--name-only', ref), { cwd }).stdout);
+  const args = ref === null ? ['diff', '--cached', '--name-only', '-z'] : argumentosDoDiffTree('--name-only', ref);
+  return separarPorNulo(rodarGit(args, { cwd }).stdout);
 }
 
 const ENCODING_DO_CABECALHO = /^encoding (.+)$/gm;
@@ -100,4 +103,28 @@ export function mensagemDoCommit(ref, cwd) {
   } catch {
     return { invalida: true };
   }
+}
+
+const CARIMBO_DE_DATA = / \d+ [+-]\d{4}$/;
+
+function semCarimbo(identidade) {
+  return identidade.replace(CARIMBO_DE_DATA, '');
+}
+
+/** Autor e committer de um commit já feito, lidos do objeto bruto, como `Nome <e-mail>` sem a data. */
+export function identidadesDoCommit(ref, cwd) {
+  const bruto = rodarGit(['cat-file', 'commit', exigirObjeto(ref)], { cwd }).stdout;
+  const separador = bruto.indexOf('\n\n');
+  const cabecalho = bruto.subarray(0, separador === -1 ? bruto.length : separador).toString('utf8').split('\n');
+  const linhaDe = (campo) => cabecalho.find((linha) => linha.startsWith(`${campo} `))?.slice(campo.length + 1);
+  const autor = linhaDe('author');
+  const committer = linhaDe('committer');
+  if (autor === undefined || committer === undefined) throw new Error('o commit não traz autor e committer');
+  return { autor: semCarimbo(autor), committer: semCarimbo(committer) };
+}
+
+/** A identidade com que o commit em curso vai sair, vista de dentro do hook (inclui `--author`). */
+export function identidadesDoCommitEmCurso(cwd) {
+  const ler = (variavel) => semCarimbo(rodarGit(['var', variavel], { cwd }).stdout.toString('utf8').trim());
+  return { autor: ler('GIT_AUTHOR_IDENT'), committer: ler('GIT_COMMITTER_IDENT') };
 }

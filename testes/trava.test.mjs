@@ -59,8 +59,15 @@ function repoComTrava({ comHook = false } = {}) {
   return { repo, retidas: join(pastaTemporaria(), 'retidas') };
 }
 
+const IDENTIDADE_DE_TESTE = {
+  GIT_AUTHOR_NAME: 'teste',
+  GIT_AUTHOR_EMAIL: 'noreply@example.invalid',
+  GIT_COMMITTER_NAME: 'teste',
+  GIT_COMMITTER_EMAIL: 'noreply@example.invalid',
+};
+
 function ambiente({ retidas, extra = {} }) {
-  return { ...process.env, VALLUS_RETIDAS: retidas, ...extra };
+  return { ...process.env, ...IDENTIDADE_DE_TESTE, VALLUS_RETIDAS: retidas, ...extra };
 }
 
 function trava(contexto, args, extra) {
@@ -87,13 +94,9 @@ function commitar(contexto, args, extra) {
   const resultado = spawnSync('git', ['commit', '--quiet', '-m', 'teste', ...args], {
     cwd: contexto.repo,
     env: {
-      ...ambiente({ retidas: contexto.retidas, extra }),
-      GIT_AUTHOR_NAME: 'teste',
-      GIT_AUTHOR_EMAIL: 'noreply@example.invalid',
-      GIT_COMMITTER_NAME: 'teste',
-      GIT_COMMITTER_EMAIL: 'noreply@example.invalid',
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: join(pastaTemporaria(), 'config'),
+      ...ambiente({ retidas: contexto.retidas, extra }),
     },
     encoding: 'utf8',
   });
@@ -106,13 +109,13 @@ function commitSemHook(repo, mensagem = 'c') {
   return git(['rev-parse', 'HEAD'], { cwd: repo }).stdout.toString('utf8').trim();
 }
 
-function cabecalhoDeEntrada({ autor = 'sessão manual', sessao = gerar.uuid() } = {}) {
+function cabecalhoDeEntrada({ autor = 'sessão manual', sessao = gerar.uuid(), modelo = 'claude-opus-5-5' } = {}) {
   return [
     '---',
     'data: 2026-11-05T22:10-03:00',
     `autor: ${autor}`,
     'ferramenta: claude-code',
-    'modelo: claude-opus-5-5',
+    `modelo: ${modelo}`,
     `sessao: ${sessao}`,
     'desfecho: concluido',
     '---',
@@ -845,4 +848,190 @@ test('com dois nomes, só o segundo barrado, o achado volta ao caminho certo e o
   assert.equal(status, 1, saida);
   assert.ok(!saida.includes(chave));
   assert.equal((saida.match(/nome-com-gitleaks/g) ?? []).length, 1);
+});
+
+// --- só o --staged move arquivo ---
+
+test('o esboço passa pelo validador: valor que só o gitleaks barra num campo do cabeçalho é retido', () => {
+  const contexto = repoComTrava({ comHook: true });
+  const chave = gerar.chaveDatabricks();
+  const original = [...cabecalhoDeEntrada({ modelo: chave }), 'texto limpo', ''].join('\n');
+  gravar(contexto.repo, ENTRADA, original);
+  adicionar(contexto.repo, ENTRADA);
+  const recusado = commitar(contexto, []);
+  assert.notEqual(recusado.status, 0, recusado.saida);
+  const noLugar = readFileSync(join(contexto.repo, ENTRADA), 'utf8');
+  assert.ok(!noLugar.includes(chave), 'o esboço levou o valor');
+  assert.ok(!recusado.saida.includes(chave));
+  assert.match(noLugar, /desfecho: retido/);
+  const retidos = arquivosRetidos(contexto.retidas);
+  assert.equal(retidos.length, 1);
+  assert.equal(readFileSync(retidos[0], 'utf8'), original);
+  adicionar(contexto.repo, ENTRADA);
+  const aceito = commitar(contexto, ['--', ENTRADA]);
+  assert.equal(aceito.status, 0, aceito.saida);
+});
+
+function recusaSemMoverArquivo(nome, preparar, args) {
+  test(`${nome} recusa o valor sem mover o arquivo de trabalho`, () => {
+    const contexto = repoComTrava();
+    const original = entradaComCpf();
+    gravar(contexto.repo, ENTRADA, original);
+    adicionar(contexto.repo, ENTRADA);
+    const resultado = git(['commit', '--quiet', '--no-verify', '-m', 'c'], { cwd: contexto.repo });
+    assert.equal(resultado.status, 0, resultado.stderr);
+    const sha = git(['rev-parse', 'HEAD'], { cwd: contexto.repo }).stdout.toString('utf8').trim();
+    const { status, saida } = trava(contexto, args(sha, preparar(contexto)));
+    assert.equal(status, 1, saida);
+    assert.equal(readFileSync(join(contexto.repo, ENTRADA), 'utf8'), original);
+    assert.deepEqual(arquivosRetidos(contexto.retidas), []);
+  });
+}
+
+recusaSemMoverArquivo('--commit', () => undefined, (sha) => ['--commit', sha]);
+recusaSemMoverArquivo('--push', () => undefined, (sha) => ['--push', ZEROS, sha]);
+recusaSemMoverArquivo('--arvore', () => undefined, () => ['--arvore']);
+recusaSemMoverArquivo(
+  '--mensagem',
+  () => {
+    const arquivo = join(pastaTemporaria(), 'msg.txt');
+    writeFileSync(arquivo, `nota ${gerar.cpfValido()}\n`);
+    return arquivo;
+  },
+  (_sha, arquivo) => ['--mensagem', arquivo],
+);
+
+// --- autor e committer ---
+
+function identidade(email) {
+  return { GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email };
+}
+
+function commitSemHookComo(repo, env) {
+  const resultado = git(['commit', '--quiet', '--no-verify', '--allow-empty', '-m', 'c'], { cwd: repo, env });
+  assert.equal(resultado.status, 0, resultado.stderr);
+  return git(['rev-parse', 'HEAD'], { cwd: repo }).stdout.toString('utf8').trim();
+}
+
+test('o hook commit-msg vê o autor de fora dado com --author e não mostra o e-mail', () => {
+  const contexto = repoComTrava({ comHook: true });
+  const email = gerar.emailDeFora();
+  const { status, saida } = commitar(contexto, ['--allow-empty', '--author', `Alguém <${email}>`]);
+  assert.notEqual(status, 0, saida);
+  assert.equal(temCommit(contexto), false);
+  assert.match(saida, /autor do commit: email/);
+  assert.ok(!saida.includes(email), 'a saída repetiu o e-mail');
+});
+
+test('o hook commit-msg vê o committer de fora e não mostra o e-mail', () => {
+  const contexto = repoComTrava({ comHook: true });
+  const email = gerar.emailDeFora();
+  const { status, saida } = commitar(contexto, ['--allow-empty'], { GIT_COMMITTER_EMAIL: email });
+  assert.notEqual(status, 0, saida);
+  assert.equal(temCommit(contexto), false);
+  assert.match(saida, /committer do commit: email/);
+  assert.ok(!saida.includes(email));
+});
+
+test('--commit recusa o autor de fora de um commit feito com --no-verify', () => {
+  const contexto = repoComTrava();
+  const email = gerar.emailDeFora();
+  const sha = commitSemHookComo(contexto.repo, { GIT_AUTHOR_EMAIL: email });
+  const { status, saida } = trava(contexto, ['--commit', sha]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /autor do commit: email/);
+  assert.ok(!saida.includes(email));
+});
+
+test('--commit recusa o committer de fora', () => {
+  const contexto = repoComTrava();
+  const email = gerar.emailDeFora();
+  const sha = commitSemHookComo(contexto.repo, { GIT_COMMITTER_EMAIL: email });
+  const { status, saida } = trava(contexto, ['--commit', sha]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /committer do commit: email/);
+  assert.ok(!saida.includes(email));
+});
+
+test('--commit recusa CPF no nome do autor, sem mostrá-lo', () => {
+  const contexto = repoComTrava();
+  const cpf = gerar.cpfValido();
+  const sha = commitSemHookComo(contexto.repo, { GIT_AUTHOR_NAME: `Fulano ${cpf}` });
+  const { status, saida } = trava(contexto, ['--commit', sha]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /autor do commit: cpf/);
+  assert.ok(!saida.includes(cpf));
+});
+
+test('--push recusa o intervalo em que só o autor de um commit do meio é de fora', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  commitSemHook(contexto.repo, 'limpo');
+  const email = gerar.emailDeFora();
+  commitSemHookComo(contexto.repo, { GIT_AUTHOR_EMAIL: email });
+  const ultimo = commitSemHook(contexto.repo, 'limpo de novo');
+  const { status, saida } = trava(contexto, ['--push', base, ultimo]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /autor do commit: email/);
+  assert.ok(!saida.includes(email));
+});
+
+test('o e-mail do PO, o noreply e o noreply do GitHub passam como autor e committer', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  commitSemHookComo(contexto.repo, identidade('carrasco.cortes@gmail.com'));
+  commitSemHookComo(contexto.repo, identidade('noreply@anthropic.com'));
+  const ultimo = commitSemHookComo(contexto.repo, identidade('12345+alguem@users.noreply.github.com'));
+  assert.equal(trava(contexto, ['--commit', ultimo]).status, 0);
+  assert.equal(trava(contexto, ['--push', base, ultimo]).status, 0);
+});
+
+// --- índice inteiro ---
+
+const LICAO = 'memoria/licoes/algo.md';
+const INDICE = 'memoria/INDICE.md';
+
+function repoComLicaoIndexada() {
+  const contexto = repoComTrava();
+  gravar(contexto.repo, INDICE, '# Índice\n- [algo](licoes/algo.md)\n');
+  gravar(contexto.repo, LICAO, '# algo\n');
+  adicionar(contexto.repo, INDICE, LICAO);
+  const base = commitSemHook(contexto.repo, 'com lição e índice');
+  return { contexto, base };
+}
+
+test('--staged recusa o índice que perdeu a linha de uma lição existente', () => {
+  const { contexto } = repoComLicaoIndexada();
+  gravar(contexto.repo, INDICE, '# Índice\n');
+  adicionar(contexto.repo, INDICE);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /memoria\/licoes\/algo\.md: licao-sem-indice/);
+});
+
+test('--commit e --push recusam o commit que tira a linha de uma lição existente', () => {
+  const { contexto, base } = repoComLicaoIndexada();
+  gravar(contexto.repo, INDICE, '# Índice\n');
+  adicionar(contexto.repo, INDICE);
+  assert.equal(git(['commit', '--quiet', '--no-verify', '-m', 'tira a linha'], { cwd: contexto.repo }).status, 0);
+  const sha = git(['rev-parse', 'HEAD'], { cwd: contexto.repo }).stdout.toString('utf8').trim();
+  const doCommit = trava(contexto, ['--commit', sha]);
+  assert.equal(doCommit.status, 1, doCommit.saida);
+  assert.match(doCommit.saida, /licao-sem-indice/);
+  assert.equal(trava(contexto, ['--push', base, sha]).status, 1);
+});
+
+test('--staged recusa apagar o índice quando há lição', () => {
+  const { contexto } = repoComLicaoIndexada();
+  assert.equal(git(['rm', '--quiet', '--', INDICE], { cwd: contexto.repo }).status, 0);
+  assert.equal(trava(contexto, ['--staged']).status, 1);
+});
+
+test('mexer em outro arquivo não confere o índice inteiro', () => {
+  const { contexto } = repoComLicaoIndexada();
+  gravar(contexto.repo, 'memoria/licoes/outra.md', '# outra\n');
+  adicionar(contexto.repo, 'memoria/licoes/outra.md');
+  const { saida } = trava(contexto, ['--staged']);
+  assert.match(saida, /outra\.md: licao-sem-indice/);
+  assert.ok(!saida.includes('algo.md'));
 });

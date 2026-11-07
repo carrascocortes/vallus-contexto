@@ -1,6 +1,14 @@
 import { contemUuid, verificarUuid } from './cabecalho.mjs';
 import { excecoesDe, temExcecao } from './excecoes.mjs';
-import { lerArquivo, lerSeExiste, mensagemDoCommit } from './git.mjs';
+import {
+  arquivosDaArvore,
+  caminhosTocados,
+  identidadesDoCommit,
+  identidadesDoCommitEmCurso,
+  lerArquivo,
+  lerSeExiste,
+  mensagemDoCommit,
+} from './git.mjs';
 import { linhasComSegredo } from './gitleaks.mjs';
 import { semIndice } from './indice.mjs';
 import { detectar } from './padroes.mjs';
@@ -74,6 +82,34 @@ export function conferirMensagemDoCommit(ref, cwd) {
   return conferirMensagem(mensagem.texto, ref);
 }
 
+const PAPEIS_DA_IDENTIDADE = ['autor', 'committer'];
+
+/**
+ * Autor e committer (`Nome <e-mail>`, sem a data) passam pela mesma conferência da mensagem; o e-mail só vale se
+ * estiver na lista permitida. O achado diz o papel e o padrão, nunca o valor.
+ */
+export function conferirIdentidades({ autor, committer }, ref = null) {
+  const texto = `${autor}\n${committer}`;
+  const uuids = [autor, committer].flatMap((linha, indice) =>
+    contemUuid(linha) ? [{ padrao: 'uuid', linha: indice + 1 }] : [],
+  );
+  const gitleaks = linhasComSegredo(texto).map((linha) => ({ padrao: 'gitleaks', linha }));
+  return [...detectar(texto), ...uuids, ...gitleaks].map(({ padrao, linha }) => ({
+    padrao,
+    papel: PAPEIS_DA_IDENTIDADE[linha - 1],
+    conteudo: false,
+    ref,
+  }));
+}
+
+export function conferirIdentidadesDoCommit(ref, cwd) {
+  return conferirIdentidades(identidadesDoCommit(ref, cwd), ref);
+}
+
+export function conferirIdentidadesDoCommitEmCurso(cwd) {
+  return conferirIdentidades(identidadesDoCommitEmCurso(cwd));
+}
+
 function achadosDeNome(caminhos) {
   const comSegredo = caminhosComSegredo(caminhos);
   return caminhos.flatMap((caminho) =>
@@ -81,9 +117,16 @@ function achadosDeNome(caminhos) {
   );
 }
 
+// Quando o commit mexe no índice, toda lição da árvore resultante é conferida contra ele, e não só a que o commit tocou.
+function caminhosAConferirNoIndice(caminhos, ref, cwd) {
+  if (!caminhosTocados(ref, cwd).includes(CAMINHO_DO_INDICE)) return caminhos;
+  return [...new Set([...caminhos, ...arquivosDaArvore(ref, cwd)])];
+}
+
 function achadosDeIndice(caminhos, ref, cwd) {
   const indice = lerSeExiste(ref, CAMINHO_DO_INDICE, cwd)?.toString('utf8') ?? '';
-  return semIndice(caminhos, indice).map((caminho) => ({ caminho, padrao: 'licao-sem-indice', conteudo: false }));
+  const sem = semIndice(caminhosAConferirNoIndice(caminhos, ref, cwd), indice);
+  return sem.map((caminho) => ({ caminho, padrao: 'licao-sem-indice', conteudo: false }));
 }
 
 // O erro do Git traz o caminho; se o nome é barrado, a mensagem não pode repeti-lo.
@@ -106,6 +149,10 @@ export function conferirCaminhos({ ref, caminhos, cwd }) {
   const nomesBarrados = new Set(
     achados.filter((achado) => achado.padrao.startsWith(PREFIXO_DE_NOME)).map((achado) => achado.caminho),
   );
+  // A lição que o commit não tocou vem da árvore: se o nome dela é barrado, também não pode ser impresso.
+  for (const { caminho, padrao } of achados) {
+    if (padrao === 'licao-sem-indice' && !caminhos.includes(caminho) && nomeBarrado(caminho)) nomesBarrados.add(caminho);
+  }
   for (const caminho of caminhos) {
     achados.push(...achadosDoArquivo(caminho, lerSemRepetirONome(ref, caminho, cwd, nomesBarrados), excecoes));
   }
