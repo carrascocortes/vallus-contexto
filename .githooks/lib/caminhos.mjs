@@ -11,7 +11,7 @@ const VIGIADOS = [
   /^memoria\/referencias\//,
 ];
 
-/** Caminho que só o PO muda de propósito: a sessão escreve passagem e entradas, nunca estes. */
+/** Caminho cuja mudança o PO precisa ver: por isso o CI avisa quando um commit o toca. */
 export function caminhoVigiado(caminho) {
   return VIGIADOS.some((padrao) => padrao.test(caminho));
 }
