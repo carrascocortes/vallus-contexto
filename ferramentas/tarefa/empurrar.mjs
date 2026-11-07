@@ -79,9 +79,15 @@ function ehUrlSsh(url) {
   return url.startsWith('git@') || url.startsWith('ssh://');
 }
 
-function rodarGit(opcoes, args, { rede = false } = {}) {
-  const env = { ...process.env };
+// Sem git replace: o objeto que o Git lê é o que o GitHub tem, e não um que uma sessão tenha trocado no clone.
+function ambienteDoGit() {
+  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' };
   delete env.GIT_SSH_COMMAND;
+  return env;
+}
+
+function rodarGit(opcoes, args, { rede = false } = {}) {
+  const env = ambienteDoGit();
   if (rede && ehUrlSsh(opcoes.url)) env.GIT_SSH_COMMAND = comandoSsh(opcoes);
   const resultado = spawnSync('git', args, {
     cwd: opcoes.clone,
@@ -174,6 +180,7 @@ function lerEstado(opcoes) {
 function lerBlob(opcoes, sha) {
   const resultado = spawnSync('git', ['cat-file', 'blob', sha], {
     cwd: opcoes.clone,
+    env: ambienteDoGit(),
     maxBuffer: opcoes.maxBuffer,
     windowsHide: true,
   });
@@ -210,8 +217,7 @@ function rodarTrava(opcoes, remoto, alvo) {
   const pasta = mkdtempSync(join(tmpdir(), 'vallus-trava-'));
   try {
     if (!extrairHooksDoCommit(opcoes, remoto, pasta)) return { semTrava: true };
-    const env = { ...process.env };
-    delete env.GIT_SSH_COMMAND;
+    const env = ambienteDoGit();
     const resultado = spawnSync(process.execPath, [join(pasta, PASTA_DA_TRAVA, 'trava.mjs'), '--push', remoto, alvo], {
       cwd: opcoes.clone,
       env,
@@ -260,8 +266,13 @@ function empurrar(opcoes, alvo) {
 
 // --- aviso e registro ---
 
+// A chave da situação não pode mudar a cada alvo: o mesmo motivo de recusa avisa uma vez por dia.
+function semSha(texto) {
+  return texto.replace(/\b[0-9a-f]{7,40}\b/g, '');
+}
+
 function chaveDaSituacao({ decisao, falhaDoPush, dia }) {
-  if (falhaDoPush !== undefined) return `falha-push|${falhaDoPush}|${dia}`;
+  if (falhaDoPush !== undefined) return `falha-push|${semSha(falhaDoPush)}|${dia}`;
   if (decisao.acao === 'parar') return `parar|${decisao.motivo}|${dia}`;
   if (decisao.retido) return `retido|${decisao.retido}|${dia}`;
   return 'ok';

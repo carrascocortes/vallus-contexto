@@ -622,3 +622,36 @@ test('o empurrar.vbs espera o node terminar, para o IgnoreNew do Agendador valer
   const vbs = readFileSync(join(raiz, 'ferramentas', 'tarefa', 'empurrar.vbs'), 'utf8');
   assert.match(vbs, /, 0, True\s*$/);
 });
+
+// --- ajustes residuais ---
+
+test('um git replace do blob da trava no GitHub não troca a trava que roda', () => {
+  const c = cenario();
+  const blobDaTrava = git(['rev-parse', `${c.semente}:.githooks/trava.mjs`], { cwd: c.clone }).stdout.toString('utf8').trim();
+  const frouxa = git(['hash-object', '-w', '--stdin'], { cwd: c.clone, input: 'process.exitCode = 0;\n' });
+  assert.equal(frouxa.status, 0, frouxa.stderr);
+  assert.equal(git(['replace', blobDaTrava, frouxa.stdout.toString('utf8').trim()], { cwd: c.clone }).status, 0);
+  commitar(c.clone, 'docs/cpf.md', `cpf ${gerar.cpfValido()}\n`);
+  c.rodar();
+  assert.equal(c.remotoMain(), c.semente);
+  assert.equal(c.avisos.length, 1);
+  assert.match(c.estadoGravado(), /^parar\|a trava recusou o intervalo\|/);
+});
+
+test('push recusado duas vezes no mesmo dia, com alvos diferentes e o mesmo motivo, avisa uma vez', () => {
+  const c = cenario();
+  const gancho = join(c.remoto, 'hooks', 'pre-receive');
+  writeFileSync(gancho, '#!/bin/sh\nwhile read antigo novo ref; do echo "recusado $novo" >&2; done\nexit 1\n');
+  chmodSync(gancho, 0o755);
+  commitar(c.clone, 'docs/a.md');
+  c.rodar();
+  commitar(c.clone, 'docs/b.md');
+  c.rodar();
+  assert.equal(c.avisos.length, 1);
+  assert.match(readFileSync(c.log, 'utf8'), /recusado [0-9a-f]{40}/);
+});
+
+test('o rodar.mjs dá prazo ao aviso do Windows', () => {
+  const rodar = readFileSync(join(raiz, 'ferramentas', 'tarefa', 'rodar.mjs'), 'utf8');
+  assert.match(rodar, /timeout: 60_000/);
+});

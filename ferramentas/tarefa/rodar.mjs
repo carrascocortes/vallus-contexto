@@ -15,7 +15,7 @@ function avisarPelaNotificacaoDoWindows(caminhoDoScript) {
     spawnSync(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', caminhoDoScript, '-Titulo', titulo, '-Texto', texto],
-      { encoding: 'utf8', windowsHide: true },
+      { encoding: 'utf8', windowsHide: true, timeout: 60_000 },
     ).status;
 }
 
