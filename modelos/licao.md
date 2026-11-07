@@ -1,8 +1,9 @@
 ---
-name: Titulo curto da licao
-description: Uma frase que diz quando a licao vale
+name: Título curto da lição
+description: Uma frase que diz quando a lição vale
 tipo: licao
-sessao: <id>                                  # só quando a lição veio migrada com o originSessionId
+# só quando a lição veio migrada com o originSessionId; sessao é o único campo onde o UUID é aceito
+sessao: <id>
 ---
 O fato, em uma ou duas frases.
 

@@ -8,7 +8,8 @@ import { git, repoTemporario } from './git.mjs';
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function caminhosVersionados(cwd) {
-  const { stdout } = git(['ls-files', '-z'], { cwd });
+  const { status, stdout, stderr } = git(['ls-files', '-z'], { cwd });
+  assert.equal(status, 0, `git ls-files falhou: ${stderr}`);
   return stdout.toString('utf8').split('\0').filter(Boolean);
 }
 
@@ -17,7 +18,9 @@ function caminhosComAcento(caminhos) {
 }
 
 test('nenhum arquivo versionado tem acento no nome', () => {
-  assert.deepEqual(caminhosComAcento(caminhosVersionados(raiz)), []);
+  const caminhos = caminhosVersionados(raiz);
+  assert.ok(caminhos.includes('.gitattributes'), 'a lista da raiz não traz o .gitattributes');
+  assert.deepEqual(caminhosComAcento(caminhos), []);
 });
 
 test('o teste de acento não é vazio', () => {
@@ -47,8 +50,8 @@ test('todo arquivo versionado é UTF-8 em LF', () => {
 });
 
 test('o campo sessao dos modelos é o marcador <id>', () => {
-  for (const modelo of ['passagem.md', 'entrada.md']) {
-    const texto = readFileSync(join(raiz, 'modelos', modelo), 'utf8');
-    assert.match(texto, /^sessao: <id>(\s+#.*)?$/m, modelo);
+  for (const modelo of ['passagem.md', 'entrada.md', 'licao.md', 'referencia.md']) {
+    const linhas = readFileSync(join(raiz, 'modelos', modelo), 'utf8').split('\n');
+    assert.ok(linhas.includes('sessao: <id>'), `${modelo} sem a linha exata "sessao: <id>"`);
   }
 });

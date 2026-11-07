@@ -1,3 +1,3 @@
-# Indice da memoria
+# Índice da memória
 
-Uma linha por licao ou referencia, com link relativo.
+uma linha por lição ou referência, com link relativo

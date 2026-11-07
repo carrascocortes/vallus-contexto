@@ -14,18 +14,29 @@ const identidade = {
   GIT_COMMITTER_EMAIL: 'noreply@example.invalid',
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: configVazia,
+  XDG_CONFIG_HOME: pastaConfigVazia,
 };
+
+const variaveisDeHook = /^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$/;
+
+function ambienteBase() {
+  return Object.fromEntries(Object.entries(process.env).filter(([nome]) => !variaveisDeHook.test(nome)));
+}
 
 export function git(args, { cwd, env, input } = {}) {
   const resultado = spawnSync('git', args, {
     cwd,
     input,
-    env: { ...process.env, ...env, ...identidade },
+    env: { ...ambienteBase(), ...env, ...identidade },
   });
+  if (resultado.error) throw resultado.error;
+  if (resultado.status === null) {
+    throw new Error(`o git ${args.join(' ')} terminou por sinal ${resultado.signal}`);
+  }
   return {
-    status: resultado.status ?? -1,
-    stdout: resultado.stdout ?? Buffer.alloc(0),
-    stderr: (resultado.stderr ?? Buffer.alloc(0)).toString('utf8'),
+    status: resultado.status,
+    stdout: resultado.stdout,
+    stderr: resultado.stderr.toString('utf8'),
   };
 }
 
