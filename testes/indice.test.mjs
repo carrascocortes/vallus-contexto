@@ -24,3 +24,18 @@ test('nome parecido não conta', () => {
   assert.deepEqual(semIndice(['memoria/licoes/ab.md'], indice), ['memoria/licoes/ab.md']);
   assert.deepEqual(semIndice(['memoria/licoes/abcd.md'], indice), ['memoria/licoes/abcd.md']);
 });
+
+test('pasta ou extensão parecida não conta', () => {
+  const parecido = '- [A](sublicoes/abc.md)\n- [B](licoes/abc.md.old)\n';
+  assert.deepEqual(semIndice(['memoria/licoes/abc.md'], parecido), ['memoria/licoes/abc.md']);
+});
+
+test('link com ./, âncora ou título conta', () => {
+  assert.deepEqual(semIndice(['memoria/licoes/x.md'], '- [X](./licoes/x.md)'), []);
+  assert.deepEqual(semIndice(['memoria/licoes/x.md'], '- [X](licoes/x.md#ancora)'), []);
+  assert.deepEqual(semIndice(['memoria/licoes/x.md'], '- [X](licoes/x.md "titulo")'), []);
+});
+
+test('link dentro de comentário HTML não conta', () => {
+  assert.deepEqual(semIndice(['memoria/licoes/x.md'], '<!--\n- [X](licoes/x.md)\n-->\n'), ['memoria/licoes/x.md']);
+});
