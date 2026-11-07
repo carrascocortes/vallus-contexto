@@ -1,0 +1,4 @@
+# Arquivos que a trava deixa passar mesmo com um valor que ela barraria.
+# Uma linha por exceção: <caminho><TAB><sha256 do conteúdo><TAB><motivo>. A exceção vale só para esse caminho com
+# exatamente esse conteúdo; qualquer mudança no arquivo a derruba. Só pula os detectores e o gitleaks: nome e
+# codificação seguem conferidos.

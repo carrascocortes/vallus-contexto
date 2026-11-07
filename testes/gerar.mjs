@@ -3,6 +3,7 @@ import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 const ALFANUMERICOS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const BASE64_URL = `${ALFANUMERICOS}_-`;
 const MAIUSCULAS_E_DIGITOS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 function sorteio(alfabeto, tamanho) {
   let saida = '';
@@ -117,7 +118,7 @@ export function emailDeFora() {
 }
 
 export function chaveDeAcesso() {
-  return 'AKI' + 'A' + sorteio(MAIUSCULAS_E_DIGITOS, 16);
+  return 'AKI' + 'A' + sorteio(BASE32, 16);
 }
 
 export function chaveDatabricks() {

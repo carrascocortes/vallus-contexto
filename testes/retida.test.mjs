@@ -12,6 +12,7 @@ import { chaveDatabricks, chaveDeAcesso, cpfValido, emailDeFora, uuid } from './
 const agora = new Date(2026, 10, 6, 14, 30, 5);
 const ENTRADA = 'frentes/minha-frente/memoria/2026-11-05-turno.md';
 const PASSAGEM = 'frentes/minha-frente/passagem.md';
+const aceita = () => true;
 const NO_WINDOWS = { skip: process.platform !== 'win32' };
 
 const pastasCriadas = [];
@@ -147,6 +148,26 @@ test('reter grava o esboço mínimo quando a validação recusa o completo', () 
   assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), esbocoMinimo(ENTRADA, ['cpf'], agora));
 });
 
+test('reter sem validação do esboço falha sem tocar o arquivo', () => {
+  const original = entradaOriginal();
+  const raizClone = clone({ [ENTRADA]: original });
+  const raizRetidas = join(pastaTemporaria(), 'retidas');
+  assert.throws(
+    () => reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora }),
+    (erro) => erro.code === 'RETENCAO_FALHOU',
+  );
+  assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), original);
+  assert.equal(existsSync(raizRetidas), false);
+});
+
+test('reter só aceita o esboço completo quando a validação devolve exatamente true', () => {
+  const original = entradaOriginal();
+  const raizClone = clone({ [ENTRADA]: original });
+  const raizRetidas = join(pastaTemporaria(), 'retidas');
+  reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: () => 'sim' });
+  assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), esbocoMinimo(ENTRADA, ['cpf'], agora));
+});
+
 test('reter grava o esboço completo quando a validação aceita', () => {
   const original = entradaOriginal();
   const raizClone = clone({ [ENTRADA]: original });
@@ -203,7 +224,7 @@ test('reter move o arquivo para <raiz>/<slug>/<data>-<nome> e grava o esboço no
   const original = entradaOriginal();
   const raizClone = clone({ [ENTRADA]: original });
   const raizRetidas = join(pastaTemporaria(), 'retidas');
-  const { destino } = reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora });
+  const { destino } = reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: aceita });
   assert.equal(destino, join(raizRetidas, 'minha-frente', '2026-11-06T14-30-05-2026-11-05-turno.md'));
   assert.equal(readFileSync(destino, 'utf8'), original);
   const noLugar = readFileSync(join(raizClone, ENTRADA), 'utf8');
@@ -215,10 +236,10 @@ test('reter move o arquivo para <raiz>/<slug>/<data>-<nome> e grava o esboço no
 test('reter não sobrescreve retida anterior', () => {
   const raizClone = clone({ [ENTRADA]: entradaOriginal() });
   const raizRetidas = join(pastaTemporaria(), 'retidas');
-  const primeira = reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora });
+  const primeira = reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: aceita });
   const segundoOriginal = entradaOriginal();
   writeFileSync(join(raizClone, ENTRADA), segundoOriginal);
-  const segunda = reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora });
+  const segunda = reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: aceita });
   assert.equal(segunda.destino, primeira.destino.replace(/\.md$/, '-2.md'));
   assert.equal(readFileSync(segunda.destino, 'utf8'), segundoOriginal);
   assert.notEqual(readFileSync(primeira.destino, 'utf8'), segundoOriginal);
@@ -230,7 +251,7 @@ test('reter falha sem tocar no original quando a raiz é um arquivo', () => {
   const raizRetidas = join(pastaTemporaria(), 'arquivo');
   writeFileSync(raizRetidas, 'não é pasta');
   assert.throws(
-    () => reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora }),
+    () => reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: aceita }),
     (erro) => erro.code === 'RETENCAO_FALHOU',
   );
   assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), original);
@@ -239,7 +260,7 @@ test('reter falha sem tocar no original quando a raiz é um arquivo', () => {
 test('reter recusa caminho que não é entrada nem passagem', () => {
   const raizClone = clone({ 'frentes/minha-frente/frente.md': 'texto' });
   assert.throws(
-    () => reter({ raizClone, caminho: 'frentes/minha-frente/frente.md', raizRetidas: join(pastaTemporaria(), 'r'), padroes: ['cpf'], agora }),
+    () => reter({ raizClone, caminho: 'frentes/minha-frente/frente.md', raizRetidas: join(pastaTemporaria(), 'r'), padroes: ['cpf'], agora, validarEsboco: aceita }),
     (erro) => erro.code === 'RETENCAO_FALHOU',
   );
 });
@@ -248,7 +269,7 @@ test('reter recusa raizRetidas dentro do clone', () => {
   const original = entradaOriginal();
   const raizClone = clone({ [ENTRADA]: original });
   assert.throws(
-    () => reter({ raizClone, caminho: ENTRADA, raizRetidas: join(raizClone, 'retidas'), padroes: ['cpf'], agora }),
+    () => reter({ raizClone, caminho: ENTRADA, raizRetidas: join(raizClone, 'retidas'), padroes: ['cpf'], agora, validarEsboco: aceita }),
     (erro) => erro.code === 'RETENCAO_FALHOU',
   );
   assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), original);
@@ -258,12 +279,12 @@ test('reter recusa raizRetidas dentro do clone', () => {
 test('reter recusa raizRetidas cujo nome começa por ".." dentro do clone e aceita a vizinha', () => {
   const raizClone = clone({ [ENTRADA]: entradaOriginal() });
   assert.throws(
-    () => reter({ raizClone, caminho: ENTRADA, raizRetidas: join(raizClone, '..retidas'), padroes: ['cpf'], agora }),
+    () => reter({ raizClone, caminho: ENTRADA, raizRetidas: join(raizClone, '..retidas'), padroes: ['cpf'], agora, validarEsboco: aceita }),
     (erro) => erro.code === 'RETENCAO_FALHOU',
   );
   assert.equal(existsSync(join(raizClone, '..retidas')), false);
   const vizinha = join(pastaTemporaria(), '..retidas');
-  assert.ok(reter({ raizClone, caminho: ENTRADA, raizRetidas: vizinha, padroes: ['cpf'], agora }).destino.startsWith(vizinha));
+  assert.ok(reter({ raizClone, caminho: ENTRADA, raizRetidas: vizinha, padroes: ['cpf'], agora, validarEsboco: aceita }).destino.startsWith(vizinha));
 });
 
 test('raizRetidasPadrao respeita VALLUS_RETIDAS', () => {
@@ -309,7 +330,7 @@ test('reter na raiz padrão aplica a ACL, sem tocar a raiz real', NO_WINDOWS, ()
   comAmbiente({ LOCALAPPDATA: dadosLocais, VALLUS_RETIDAS: undefined }, () => {
     const raizRetidas = raizRetidasPadrao();
     assert.equal(raizRetidas, join(dadosLocais, 'vallus-office', 'retidas'));
-    reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora });
+    reter({ raizClone, caminho: ENTRADA, raizRetidas, padroes: ['cpf'], agora, validarEsboco: aceita });
     assert.equal(entradasDaAcl(raizRetidas).entradas.length, 1);
   });
 });

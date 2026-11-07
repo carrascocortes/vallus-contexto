@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { contemUuid, ehUuidExato, lerCabecalho, verificarUuid } from './cabecalho.mjs';
+import { contemUuid, ehUuidExato, lerCabecalho } from './cabecalho.mjs';
 import { detectar } from './padroes.mjs';
 
 const SEGMENTO = '[A-Za-z0-9._-]+';
@@ -108,10 +108,6 @@ export function esbocoMinimo(caminho, padroes, agora) {
   return montarEsboco(tipoDe(caminho), [], padroes, agora);
 }
 
-function esbocoSemAchados(texto) {
-  return detectar(texto).length === 0 && verificarUuid(texto).length === 0;
-}
-
 function restringirAoUsuario(pasta) {
   const { USERDOMAIN, USERNAME } = process.env;
   if (!USERDOMAIN || !USERNAME) throw new Error('USERDOMAIN e USERNAME são necessários para a ACL');
@@ -127,7 +123,7 @@ function criarRaizRestrita(raiz) {
     renameSync(temporaria, raiz);
   } catch (erro) {
     tentarRemover(temporaria, { recursive: true });
-    // Outro processo criou a raiz primeiro, e a criou do mesmo jeito.
+    // Outro processo pode ter criado a raiz primeiro; só se confere que ela existe e é pasta.
     if (!(existsSync(raiz) && statSync(raiz).isDirectory())) throw erro;
   }
 }
@@ -160,10 +156,11 @@ function estaDentro(pasta, caminho) {
   return relativo !== '' && !saiDaPasta;
 }
 
-export function reter({ raizClone, caminho, raizRetidas, padroes, agora, validarEsboco = esbocoSemAchados }) {
+export function reter({ raizClone, caminho, raizRetidas, padroes, agora, validarEsboco }) {
   const origem = join(raizClone, caminho);
   const temporario = `${origem}.retida.tmp`;
   try {
+    if (typeof validarEsboco !== 'function') throw new Error('a validação do esboço é obrigatória');
     if (!ehRetivel(caminho)) throw new Error('o caminho não é de entrada nem de passagem');
     if (resolve(raizRetidas) === resolve(raizClone) || estaDentro(raizClone, raizRetidas)) {
       throw new Error('a pasta das retidas está dentro do clone');
@@ -180,7 +177,7 @@ export function reter({ raizClone, caminho, raizRetidas, padroes, agora, validar
       throw new Error('a cópia retida tem tamanho diferente do original');
     }
     const completo = esboco(caminho, original, padroes, agora);
-    writeFileSync(temporario, validarEsboco(completo) ? completo : esbocoMinimo(caminho, padroes, agora));
+    writeFileSync(temporario, validarEsboco(completo) === true ? completo : esbocoMinimo(caminho, padroes, agora));
     renameSync(temporario, origem);
     return { destino };
   } catch (erro) {
