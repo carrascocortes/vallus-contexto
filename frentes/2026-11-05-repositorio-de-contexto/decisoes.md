@@ -16,7 +16,7 @@ Quem decidiu: escolha do Claude não vetada pelo PO
 O aviso é uma notificação do Windows mais uma linha no log da tarefa; cada situação avisa uma vez, e o commit retido
 avisa de novo uma vez por dia.
 Origem: aprovação do plano no chat da sessão (memoria/2026-11-07T03-30-claude-code-sessao-manual.md)
-Substituída por: —
+Substituída por: DF-11
 
 ## DF-4 · 2026-11-07 · Modelos em modelos/
 Quem decidiu: escolha do Claude não vetada pelo PO
@@ -63,4 +63,11 @@ Quem decidiu: escolha do Claude não vetada pelo PO
 O agendador chama `wscript.exe` com um `empurrar.vbs` que inicia o Node sem janela, para não piscar um console a cada
 hora.
 Origem: aprovação do plano no chat da sessão (memoria/2026-11-07T03-30-claude-code-sessao-manual.md)
+Substituída por: —
+
+## DF-11 · 2026-11-07 · O aviso da tarefa se repete uma vez por dia
+Quem decidiu: escolha do Claude, vetável
+Toda situação que avisa (tarefa parada, push que falhou, commit retido) avisa uma vez por dia enquanto durar, e a
+tarefa só dá a situação por avisada se a notificação chegou. O log é `%USERPROFILE%\.vallus-contexto\empurrar.log`.
+Origem: revisão da tarefa agendada na execução da F1 (memoria/2026-11-07T03-30-claude-code-sessao-manual.md)
 Substituída por: —

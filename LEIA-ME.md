@@ -9,16 +9,18 @@ Se a variável `VALLUS_OFFICE_MESA` estiver no ambiente, você é agente de mesa
 ## O turno
 
 1. **Abrir.** Ache a frente em `frentes/` ou crie uma. Toda sessão que grava arquivo em repositório, faz commit ou
-   passa de uma hora trabalha numa frente; pergunta rápida não. Leia `LEIA-ME.md`, `memoria/INDICE.md`, e, na pasta da
-   frente, `frente.md`, `passagem.md`, `decisoes.md` e as três últimas entradas de `memoria/`.
-2. **Conferir o bilhete.** Se a `passagem.md` diz `sessao_aberta: sim` e a sessão é de outra pessoa ou ferramenta, só
-   leia e pergunte ao PO. Se o PO diz que a outra morreu, escreva por ela uma entrada com `desfecho: cortado`, motivo
-   "sessão morta" e o estado do código tirado do Git, e assuma.
+   passa de uma hora trabalha numa frente; pergunta rápida não. A pasta de frente nova se chama `<repositório>-<número>`
+   da issue (`grc-saas-1234`) ou, sem issue, `AAAA-MM-DD-<tema>`. Leia `LEIA-ME.md`, `memoria/INDICE.md`, e, na pasta
+   da frente, `frente.md`, `passagem.md`, `decisoes.md` e as três últimas entradas de `memoria/`.
+2. **Conferir o bilhete.** Se a `passagem.md` diz `sessao_aberta: sim` e o campo `sessao:` não é o da sua sessão, só
+   leia e pergunte ao PO: um escritor por frente. Se o PO diz que a outra morreu, escreva por ela uma entrada com
+   `desfecho: cortado`, motivo "sessão morta" e o estado do código tirado do Git, e assuma.
 3. **Marcar.** Reescreva a `passagem.md` com `sessao_aberta: sim` e a sua identificação.
 4. **Marcos.** A cada commit, PR, decisão ou antes de comando longo, reescreva a `passagem.md`. Decisão do PO vai para
-   `decisoes.md` na hora.
-5. **Fechar.** Escreva a entrada do turno em `memoria/`, reescreva a `passagem.md` com `sessao_aberta: não` e faça o
-   commit.
+   `decisoes.md` na hora. Mudança de objetivo ou de aceite no `frente.md` também ganha entrada em `memoria/`.
+5. **Fechar.** Escreva a entrada do turno em `memoria/`, com o nome `AAAA-MM-DDTHH-MM-<ferramenta>-<autor>.md`
+   (`<autor>` é `sessao-manual` ou o personagem do escritório), reescreva a `passagem.md` com `sessao_aberta: não` e
+   faça o commit.
 
 Os formatos de cada arquivo estão em `modelos/`; copie de lá em vez de inventar. Tetos: `frente.md` 60 linhas,
 `passagem.md` e cada entrada 40, decisão avulsa 30, lição 40.
@@ -37,8 +39,9 @@ Prosa sobre cliente a trava não pega: a regra é sua. Em dúvida, deixe de fora
 
 Se o commit for recusado, a mensagem diz o arquivo, a linha e o padrão. Se o texto foi para
 `%LOCALAPPDATA%\vallus-office\retidas\`, o esboço ficou no lugar dele: repita com `git add -- <caminho>` e
-`git commit -- <caminho>`, e avise o PO. Nenhuma sessão lê `retidas\`, salvo se o PO pedir ajuda para reescrever. A
-mensagem de commit também passa pela trava (sem CPF, e-mail de fora, UUID, chave). Nunca use `--no-verify`.
+`git commit -- <caminho>`, e avise o PO. Nenhuma sessão lê `retidas\`, salvo se o PO pedir ajuda para reescrever. Se
+a mensagem diz que o texto não foi retido, ele continua no disco: não tente outro caminho, avise o PO e espere. A
+mensagem de commit e o autor também passam pela trava (sem CPF, e-mail de fora, UUID, chave). Nunca use `--no-verify`.
 
 ## Regras de escrita
 
@@ -47,6 +50,7 @@ mensagem de commit também passa pela trava (sem CPF, e-mail de fora, UUID, chav
   erra com acento.
 - Commit só por caminho: `git commit -- <caminhos>`. Nunca `git commit -a` nem `git add .`, porque levam o arquivo que
   outra sessão deixou pela metade. Autor: o nome da ferramenta e do modelo, com o e-mail do PO.
+- Nunca `--amend`, `rebase` nem `reset` em commit já feito: correção é commit novo.
 - O `memoria/INDICE.md` usa só link em linha, `[título](licoes/<nome>.md)`; link por referência não conta. Lição sem
   linha no índice é recusada.
 - Entrada de memória não se edita: correção é entrada nova que cita a anterior. Decisão só ganha a marca
@@ -54,8 +58,8 @@ mensagem de commit também passa pela trava (sem CPF, e-mail de fora, UUID, chav
 
 ## Push e vigilância
 
-Nenhuma sessão faz push. Uma tarefa agendada empurra o main de hora em hora, sem ok do PO a cada vez; vale só para este
-repositório. Commit que toca `.github/` ou `.githooks/` espera o PO, e os seguintes esperam junto. Mudanças em
+Nenhuma sessão faz push. Uma tarefa agendada empurra o main de hora em hora, sem ok do PO a cada vez e sem push
+forçado; vale só para este repositório e só para o main. Commit que toca `.github/` ou `.githooks/` espera o PO, e os seguintes esperam junto. Mudanças em
 `LEIA-ME.md`, `.gitattributes`, `ferramentas/`, `decisoes.md`, `decisoes/` e `memoria/` (índice, lições, referências)
 avisam o PO pelo CI.
 
