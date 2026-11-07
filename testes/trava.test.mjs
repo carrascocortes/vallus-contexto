@@ -17,6 +17,8 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { conferirCaminhos } from '../.githooks/lib/conferir.mjs';
+import { arquivosMudados } from '../.githooks/lib/git.mjs';
 import { commitsDoPush } from '../.githooks/lib/push.mjs';
 import { git, repoTemporario } from './git.mjs';
 import * as gerar from './gerar.mjs';
@@ -743,7 +745,7 @@ test('--commit confere a mensagem de um commit feito com --no-verify', () => {
   const cpf = gerar.cpfValido();
   const { status, saida } = trava(contexto, ['--commit', commitSemHook(contexto.repo, `nota ${cpf}`)]);
   assert.equal(status, 1, saida);
-  assert.match(saida, /mensagem de commit: linha 1: cpf/);
+  assert.match(saida, /mensagem de commit [0-9a-f]{7}: linha 1: cpf/);
   assert.ok(!saida.includes(cpf));
 });
 
@@ -778,4 +780,69 @@ test('gitlink de nome barrado dá 2 e não repete o nome na saída', () => {
   const { status, saida } = trava(contexto, ['--staged']);
   assert.equal(status, 2, saida);
   assert.ok(!saida.includes(cpf), 'a saída repetiu o nome barrado');
+});
+
+function commitComCodificacao(repo, codificacao, mensagem) {
+  const resultado = git(
+    ['-c', `i18n.commitEncoding=${codificacao}`, 'commit', '--quiet', '--no-verify', '--allow-empty', '-m', mensagem],
+    { cwd: repo },
+  );
+  assert.equal(resultado.status, 0, resultado.stderr);
+  return git(['rev-parse', 'HEAD'], { cwd: repo }).stdout.toString('utf8').trim();
+}
+
+test('mensagem com codificação declarada que não é UTF-8 é recusada no --commit e no --push, sem o valor', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  const cpf = gerar.cpfValido();
+  const estranho = commitComCodificacao(contexto.repo, 'CP037', `nota cpf ${cpf}`);
+  for (const args of [['--commit', estranho], ['--push', base, estranho]]) {
+    const { status, saida } = trava(contexto, args);
+    assert.equal(status, 1, saida);
+    assert.match(saida, /mensagem de commit [0-9a-f]{7}: encoding-invalido/);
+    assert.ok(!saida.includes(cpf));
+  }
+});
+
+test('mensagem em UTF-8 declarado de outras grafias e limpa passa', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  const limpo = commitComCodificacao(contexto.repo, 'UTF8', 'ação concluída');
+  assert.equal(trava(contexto, ['--commit', limpo]).status, 0);
+  assert.equal(trava(contexto, ['--push', base, limpo]).status, 0);
+});
+
+test('mensagem de commit que não é UTF-8 válido é encoding-invalido', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  const arvore = git(['rev-parse', 'HEAD^{tree}'], { cwd: contexto.repo }).stdout.toString('utf8').trim();
+  const bruto = Buffer.concat([
+    Buffer.from(`tree ${arvore}\nparent ${base}\nauthor t <noreply@example.invalid> 1 +0000\ncommitter t <noreply@example.invalid> 1 +0000\n\n`),
+    Buffer.from('a\xe7\xe3o\n', 'latin1'),
+  ]);
+  const criado = git(['hash-object', '-t', 'commit', '-w', '--stdin'], { cwd: contexto.repo, input: bruto });
+  assert.equal(criado.status, 0, criado.stderr);
+  const sha = criado.stdout.toString('utf8').trim();
+  const { status, saida } = trava(contexto, ['--commit', sha]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /encoding-invalido/);
+});
+
+test('com dois nomes, só o segundo barrado, o achado volta ao caminho certo e o caminho não aparece', () => {
+  const contexto = repoComTrava();
+  const chave = gerar.chaveDeAcesso();
+  const limpo = 'docs/limpo.md';
+  const barrado = `docs/${chave}.md`;
+  gravar(contexto.repo, limpo, 'limpo\n');
+  gravar(contexto.repo, barrado, 'limpo\n');
+  adicionar(contexto.repo, limpo, barrado);
+  const caminhos = arquivosMudados(null, contexto.repo);
+  assert.deepEqual([...caminhos].sort(), [limpo, barrado].sort());
+  const doGitleaks = conferirCaminhos({ ref: null, caminhos, cwd: contexto.repo })
+    .filter((achado) => achado.padrao === 'nome-com-gitleaks');
+  assert.deepEqual(doGitleaks.map((achado) => achado.caminho), [barrado]);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.ok(!saida.includes(chave));
+  assert.equal((saida.match(/nome-com-gitleaks/g) ?? []).length, 1);
 });

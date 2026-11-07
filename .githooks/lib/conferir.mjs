@@ -1,6 +1,6 @@
 import { contemUuid, verificarUuid } from './cabecalho.mjs';
 import { excecoesDe, temExcecao } from './excecoes.mjs';
-import { lerArquivo, lerSeExiste } from './git.mjs';
+import { lerArquivo, lerSeExiste, mensagemDoCommit } from './git.mjs';
 import { linhasComSegredo } from './gitleaks.mjs';
 import { semIndice } from './indice.mjs';
 import { detectar } from './padroes.mjs';
@@ -33,18 +33,26 @@ function achadosDoArquivo(caminho, bytes, excecoes) {
   return conferirTexto(texto).map((achado) => ({ caminho, ...achado, conteudo: true }));
 }
 
+// Uma única chamada ao gitleaks para todos os nomes, uma linha por caminho; o achado volta ao caminho pela linha.
+// Nome com quebra de linha desalinharia a contagem, mas já é barrado antes (não é ASCII imprimível).
+function caminhosComSegredo(caminhos) {
+  const candidatos = caminhos.filter((caminho) => SO_ASCII_IMPRIMIVEL.test(caminho));
+  if (candidatos.length === 0) return new Set();
+  return new Set(linhasComSegredo(candidatos.join('\n')).map((linha) => candidatos[linha - 1]));
+}
+
 // O nome do arquivo também não pode carregar dado de cliente nem segredo.
-function padroesDoNome(caminho) {
+function padroesDoNome(caminho, comSegredo) {
   const padroes = detectar(caminho).map(({ padrao }) => `${PREFIXO_DE_NOME}${padrao}`);
   if (contemUuid(caminho)) padroes.push(`${PREFIXO_DE_NOME}uuid`);
-  if (linhasComSegredo(caminho).length > 0) padroes.push(`${PREFIXO_DE_NOME}gitleaks`);
+  if (comSegredo.has(caminho)) padroes.push(`${PREFIXO_DE_NOME}gitleaks`);
   if (!SO_ASCII_IMPRIMIVEL.test(caminho)) padroes.push(`${PREFIXO_DE_NOME}acento`);
   return [...new Set(padroes)];
 }
 
 /** O nome que a trava barra: quem imprime caminhos não o mostra. */
 export function nomeBarrado(caminho) {
-  return padroesDoNome(caminho).length > 0;
+  return padroesDoNome(caminho, caminhosComSegredo([caminho])).length > 0;
 }
 
 /**
@@ -59,9 +67,17 @@ export function conferirMensagem(texto, ref = null) {
   return achados.sort((a, b) => a.linha - b.linha).map((achado) => ({ ...achado, mensagem: true, conteudo: false, ref }));
 }
 
+/** A mensagem de um commit já feito, lida do objeto bruto; codificação que não é UTF-8 é achado. */
+export function conferirMensagemDoCommit(ref, cwd) {
+  const mensagem = mensagemDoCommit(ref, cwd);
+  if (mensagem.invalida) return [{ mensagem: true, padrao: 'encoding-invalido', conteudo: false, ref }];
+  return conferirMensagem(mensagem.texto, ref);
+}
+
 function achadosDeNome(caminhos) {
+  const comSegredo = caminhosComSegredo(caminhos);
   return caminhos.flatMap((caminho) =>
-    padroesDoNome(caminho).map((padrao) => ({ caminho, padrao, conteudo: false })),
+    padroesDoNome(caminho, comSegredo).map((padrao) => ({ caminho, padrao, conteudo: false })),
   );
 }
 

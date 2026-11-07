@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { conferirCaminhos, conferirMensagem, conferirTexto } from './lib/conferir.mjs';
-import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto, lerArquivo, mensagemDoCommit } from './lib/git.mjs';
+import { conferirCaminhos, conferirMensagem, conferirMensagemDoCommit, conferirTexto } from './lib/conferir.mjs';
+import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto, lerArquivo } from './lib/git.mjs';
 import { commitsDoPush } from './lib/push.mjs';
 import { ehRetivel, raizRetidasPadrao, reter } from './lib/retida.mjs';
 
@@ -16,8 +16,14 @@ function avisar(mensagem) {
 }
 
 // O caminho de nome barrado pode carregar o próprio valor: nunca é impresso.
-function descrever({ caminho, linha, padrao, nomeBarrado, mensagem }) {
-  if (mensagem) return `mensagem de commit: linha ${linha}: ${padrao}`;
+function descreverMensagem({ ref, linha, padrao }) {
+  const commit = ref ? ` ${ref.slice(0, 7)}` : '';
+  const onde = linha === undefined ? '' : `linha ${linha}: `;
+  return `mensagem de commit${commit}: ${onde}${padrao}`;
+}
+
+function descrever({ caminho, linha, padrao, nomeBarrado, mensagem, ref }) {
+  if (mensagem) return descreverMensagem({ ref, linha, padrao });
   const onde = nomeBarrado ? '(arquivo de nome barrado)' : caminho;
   return linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`;
 }
@@ -34,8 +40,7 @@ function conferirIndice() {
 
 function conferirCommit(sha) {
   const ref = exigirObjeto(sha);
-  const daMensagem = conferirMensagem(mensagemDoCommit(ref, cwd), ref);
-  return [...daMensagem, ...conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd })];
+  return [...conferirMensagemDoCommit(ref, cwd), ...conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd })];
 }
 
 // O Git passa ao commit-msg o arquivo com a mensagem inteira, inclusive as linhas de comentário que `-m` mantém.

@@ -77,6 +77,27 @@ export function caminhosTocados(ref, cwd) {
   return separarPorNulo(rodarGit(argumentosDoDiffTree('--name-only', ref), { cwd }).stdout);
 }
 
+const ENCODING_DO_CABECALHO = /^encoding (.+)$/gm;
+const DECODIFICADOR_ESTRITO = new TextDecoder('utf-8', { fatal: true });
+
+function encodingEhUtf8(valor) {
+  return valor.trim().toLowerCase().replace(/-/g, '') === 'utf8';
+}
+
+/**
+ * Lê a mensagem do objeto bruto: `git log` a reconverte pelo cabeçalho `encoding` e pode devolver vazio para um texto
+ * legível. `{ invalida: true }` quando o commit declara outra codificação ou a mensagem não é UTF-8 válido.
+ */
 export function mensagemDoCommit(ref, cwd) {
-  return rodarGit(['log', '-1', '--format=%B', exigirObjeto(ref), '--'], { cwd }).stdout.toString('utf8');
+  const bruto = rodarGit(['cat-file', 'commit', exigirObjeto(ref)], { cwd }).stdout;
+  const separador = bruto.indexOf('\n\n');
+  const cabecalho = bruto.subarray(0, separador === -1 ? bruto.length : separador).toString('latin1');
+  const corpo = separador === -1 ? Buffer.alloc(0) : bruto.subarray(separador + 2);
+  const declarados = [...cabecalho.matchAll(ENCODING_DO_CABECALHO)].map((achado) => achado[1]);
+  if (!declarados.every(encodingEhUtf8)) return { invalida: true };
+  try {
+    return { texto: DECODIFICADOR_ESTRITO.decode(corpo) };
+  } catch {
+    return { invalida: true };
+  }
 }
