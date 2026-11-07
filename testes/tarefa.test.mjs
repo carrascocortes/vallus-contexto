@@ -1,6 +1,16 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,7 +127,9 @@ function principalDe(repo) {
   return resultado.status === 0 ? resultado.stdout.toString('utf8').trim() : '';
 }
 
-function cenario({ hooksPath = '.githooks' } = {}) {
+// Por padrão o GitHub já tem a trava: a semente é o commit com .githooks, empurrado antes do primeiro ciclo.
+// `trava` troca o conteúdo de trava.mjs na semente.
+function cenario({ hooksPath = '.githooks', semeado = true, trava } = {}) {
   const base = pastaTemporaria();
   const remoto = join(base, 'remoto.git');
   assert.equal(git(['init', '--bare', '--quiet', '--initial-branch=main', remoto]).status, 0);
@@ -125,23 +137,34 @@ function cenario({ hooksPath = '.githooks' } = {}) {
   pastas.push(clone);
   cpSync(join(raiz, '.githooks'), join(clone, '.githooks'), { recursive: true });
   for (const gancho of ['pre-commit', 'commit-msg']) chmodSync(join(clone, '.githooks', gancho), 0o755);
+  if (trava !== undefined) writeFileSync(join(clone, '.githooks', 'trava.mjs'), trava);
   if (hooksPath) git(['config', 'core.hooksPath', hooksPath], { cwd: clone });
+  let semente = '';
+  if (semeado) {
+    assert.equal(git(['add', '--', '.githooks'], { cwd: clone }).status, 0);
+    const feito = git(['commit', '--quiet', '--no-verify', '-m', 'semente'], { cwd: clone });
+    assert.equal(feito.status, 0, feito.stderr);
+    semente = principalDe(clone);
+    assert.equal(git(['push', '--quiet', remoto, `${semente}:refs/heads/main`], { cwd: clone }).status, 0);
+    assert.equal(git(['update-ref', 'refs/remotes/origin/main', semente], { cwd: clone }).status, 0);
+  }
   const avisos = [];
   const estado = join(base, 'estado', 'ultimo');
   const log = join(base, 'log', 'empurrar.log');
   const contexto = {
     remoto,
     clone,
+    semente,
     avisos,
     estado,
     log,
-    rodar({ url = remoto, agora = new Date('2026-11-07T10:00:00Z'), canal = () => 0, maxBuffer } = {}) {
+    rodar({ url = remoto, agora = new Date('2026-11-07T10:00:00Z'), canal = () => 0, maxBuffer, tempoDaTrava } = {}) {
       const argv = ['--clone', clone, '--url', url, '--estado', estado, '--log', log];
       const avisar = (titulo, texto) => {
         avisos.push({ titulo, texto });
         return canal(avisos.length);
       };
-      return main(argv, { avisar, agora, maxBuffer });
+      return main(argv, { avisar, agora, maxBuffer, tempoDaTrava });
     },
     remotoMain: () => principalDe(remoto),
     estadoGravado: () => (existsSync(estado) ? readFileSync(estado, 'utf8').trim() : ''),
@@ -206,7 +229,7 @@ test('depois que o remoto avança até o retido, volta a empurrar o resto', () =
 });
 
 test('remoto vazio com commit em .github retém a partir dele', () => {
-  const c = cenario();
+  const c = cenario({ semeado: false });
   commitar(c.clone, '.github/workflows/x.yml');
   commitar(c.clone, 'docs/a.md');
   c.rodar();
@@ -218,7 +241,7 @@ test('não empurra com core.hooksPath errado e avisa', () => {
   const c = cenario({ hooksPath: 'outro' });
   commitar(c.clone, 'docs/a.md');
   c.rodar();
-  assert.equal(c.remotoMain(), '');
+  assert.equal(c.remotoMain(), c.semente);
   assert.equal(c.avisos.length, 1);
   assert.match(c.estadoGravado(), /^parar\|hook desligado\|/);
 });
@@ -273,7 +296,7 @@ test('push recusado por um hook pre-receive no remoto avisa e grava falha-push',
   chmodSync(gancho, 0o755);
   commitar(c.clone, 'docs/a.md');
   c.rodar();
-  assert.equal(c.remotoMain(), '');
+  assert.equal(c.remotoMain(), c.semente);
   assert.equal(c.avisos.length, 1);
   assert.match(c.estadoGravado(), /^falha-push\|/);
 });
@@ -407,6 +430,195 @@ test('opção desconhecida, sem valor ou com sinal de igual sai 2, sem ciclo, e 
   ]) {
     assert.equal(main(argv, { avisar }), 2);
   }
-  assert.equal(c.remotoMain(), '');
+  assert.equal(c.remotoMain(), c.semente);
   assert.equal(readFileSync(c.log, 'utf8').trim().split('\n').length, 3);
+});
+
+// --- o alvo sai do conjunto varrido ---
+
+// O remoto nomeado roda um script no lugar do upload-pack: na primeira listagem do ls-remote o main do clone muda.
+function remotoQueMudaOMainNoLsRemote(c, destino) {
+  const pasta = pastaTemporaria();
+  const marca = join(pasta, 'feito');
+  const script = join(pasta, 'gancho.mjs');
+  writeFileSync(
+    script,
+    [
+      "import { spawnSync } from 'node:child_process';",
+      "import { existsSync, writeFileSync } from 'node:fs';",
+      `const marca = ${JSON.stringify(marca)};`,
+      'if (!existsSync(marca)) {',
+      "  writeFileSync(marca, '');",
+      `  spawnSync('git', ['-C', ${JSON.stringify(c.clone)}, 'update-ref', 'refs/heads/main', ${JSON.stringify(destino)}]);`,
+      '}',
+      "const resultado = spawnSync('git', ['upload-pack', ...process.argv.slice(2)], { stdio: 'inherit' });",
+      'process.exitCode = resultado.status ?? 1;',
+      '',
+    ].join('\n'),
+  );
+  assert.equal(git(['remote', 'add', 'alvo', c.remoto], { cwd: c.clone }).status, 0);
+  const comando = `"${process.execPath.replaceAll('\\', '/')}" "${script.replaceAll('\\', '/')}"`;
+  assert.equal(git(['config', 'remote.alvo.uploadpack', comando], { cwd: c.clone }).status, 0);
+  return 'alvo';
+}
+
+test('o main reescrito para trás durante o ls-remote não faz subir o commit que não foi varrido', () => {
+  const c = cenario();
+  const anterior = commitar(c.clone, 'docs/a.md');
+  commitar(c.clone, '.githooks/excecoes.txt', '# trocado\n');
+  const url = remotoQueMudaOMainNoLsRemote(c, anterior);
+  c.rodar({ url });
+  assert.equal(c.remotoMain(), anterior);
+  assert.equal(c.avisos.length, 1);
+  assert.match(c.estadoGravado(), /^retido\|/);
+});
+
+test('o main trocado por outro commit durante o ls-remote não faz subir o commit em .github', () => {
+  const c = cenario();
+  git(['checkout', '--quiet', '-b', 'lado'], { cwd: c.clone });
+  const lado = commitar(c.clone, 'docs/lado.md');
+  git(['checkout', '--quiet', 'main'], { cwd: c.clone });
+  commitar(c.clone, '.github/workflows/x.yml');
+  const url = remotoQueMudaOMainNoLsRemote(c, lado);
+  c.rodar({ url });
+  assert.equal(c.remotoMain(), c.semente);
+  assert.equal(c.avisos.length, 1);
+  assert.match(c.estadoGravado(), /^retido\|/);
+});
+
+// --- a trava é a que está no GitHub ---
+
+function pastasDaTrava() {
+  return readdirSync(tmpdir()).filter((nome) => nome.startsWith('vallus-trava-'));
+}
+
+test('a trava do disco trocada por uma que sai 0 não deixa subir um commit com CPF', () => {
+  const c = cenario();
+  writeFileSync(join(c.clone, '.githooks', 'trava.mjs'), 'process.exitCode = 0;\n');
+  commitar(c.clone, 'docs/cpf.md', `cpf ${gerar.cpfValido()}\n`);
+  c.rodar();
+  assert.equal(c.remotoMain(), c.semente);
+  assert.equal(c.avisos.length, 1);
+  assert.match(c.estadoGravado(), /^parar\|a trava recusou o intervalo\|/);
+});
+
+test('remoto sem .githooks para com o motivo de que a trava não está no GitHub', () => {
+  const c = cenario({ semeado: false });
+  const a = commitar(c.clone, 'docs/a.md');
+  assert.equal(git(['push', '--quiet', c.remoto, `${a}:refs/heads/main`], { cwd: c.clone }).status, 0);
+  commitar(c.clone, 'docs/b.md');
+  c.rodar();
+  assert.equal(c.remotoMain(), a);
+  assert.match(c.estadoGravado(), /^parar\|a trava não está no GitHub\|/);
+});
+
+test('remoto vazio para com o motivo de que a trava não está no GitHub', () => {
+  const c = cenario({ semeado: false });
+  commitar(c.clone, 'docs/a.md');
+  c.rodar();
+  assert.equal(c.remotoMain(), '');
+  assert.match(c.estadoGravado(), /^parar\|a trava não está no GitHub\|/);
+});
+
+test('a pasta temporária da trava não sobra, nem quando a trava falha', () => {
+  const antes = pastasDaTrava();
+  const limpo = cenario();
+  commitar(limpo.clone, 'docs/a.md');
+  limpo.rodar();
+  assert.equal(limpo.remotoMain(), principalDe(limpo.clone));
+  const quebrado = cenario({ trava: 'process.exitCode = 2;\n' });
+  commitar(quebrado.clone, 'docs/a.md');
+  quebrado.rodar();
+  assert.match(quebrado.estadoGravado(), /^parar\|a trava falhou\|/);
+  assert.deepEqual(pastasDaTrava(), antes);
+});
+
+// --- motivos que dizem a causa ---
+
+test('trava que estoura o tempo para com o motivo próprio', () => {
+  const c = cenario({ trava: 'await new Promise((resolver) => setTimeout(resolver, 30000));\n' });
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ tempoDaTrava: 500 });
+  assert.equal(c.remotoMain(), c.semente);
+  assert.match(c.estadoGravado(), /^parar\|a trava passou do tempo\|/);
+});
+
+test('push recusado sem texto do remoto dá o motivo do Git, e não a linha To', () => {
+  const c = cenario();
+  const gancho = join(c.remoto, 'hooks', 'pre-receive');
+  writeFileSync(gancho, '#!/bin/sh\nexit 1\n');
+  chmodSync(gancho, 0o755);
+  commitar(c.clone, 'docs/a.md');
+  c.rodar();
+  assert.match(c.estadoGravado(), /^falha-push\|/);
+  assert.doesNotMatch(c.avisos[0].texto, /^To /);
+  assert.match(c.avisos[0].texto, /pre-receive hook declined/);
+});
+
+test('o log do push bem-sucedido leva o commit empurrado', () => {
+  const c = cenario();
+  commitar(c.clone, 'docs/a.md');
+  const topo = commitar(c.clone, 'docs/b.md');
+  c.rodar();
+  assert.ok(readFileSync(c.log, 'utf8').includes(topo));
+});
+
+test('o GitHub à frente do main local tem motivo próprio, e o divergente segue como estava', () => {
+  const c = cenario();
+  const a = commitar(c.clone, 'docs/a.md');
+  const b = commitar(c.clone, 'docs/b.md');
+  assert.equal(git(['push', '--quiet', c.remoto, `${b}:refs/heads/main`], { cwd: c.clone }).status, 0);
+  assert.equal(git(['update-ref', 'refs/heads/main', a], { cwd: c.clone }).status, 0);
+  c.rodar();
+  assert.match(c.estadoGravado(), /^parar\|o GitHub está à frente do main local\|/);
+  git(['update-ref', 'refs/heads/main', c.semente], { cwd: c.clone });
+  commitar(c.clone, 'docs/outro.md');
+  c.rodar({ agora: new Date('2026-11-08T10:00:00Z') });
+  assert.match(c.estadoGravado(), /^parar\|histórico divergente\|/);
+});
+
+// --- lote por ciclo ---
+
+function commitsDe(quantidade, arquivosPorCommit = 1) {
+  return Array.from({ length: quantidade }, (_, i) => ({
+    sha: `s${i + 1}`,
+    arquivos: Array.from({ length: arquivosPorCommit }, (_, j) => `docs/${i}-${j}.md`),
+  }));
+}
+
+test('decidir: 31 commits sobem em lote de 30', () => {
+  const commits = commitsDe(31);
+  assert.deepEqual(decidir(estadoBase({ commits, local: 's31' })), { acao: 'empurrar', alvo: 's30' });
+});
+
+test('decidir: commits de 100 arquivos sobem um por ciclo', () => {
+  const commits = commitsDe(3, 100);
+  assert.deepEqual(decidir(estadoBase({ commits, local: 's3' })), { acao: 'empurrar', alvo: 's1' });
+});
+
+test('decidir: um commit de 200 arquivos sobe sozinho', () => {
+  const commits = commitsDe(2, 200);
+  assert.deepEqual(decidir(estadoBase({ commits, local: 's2' })), { acao: 'empurrar', alvo: 's1' });
+});
+
+test('decidir: o lote soma os arquivos de commits menores até 150', () => {
+  const commits = [
+    { sha: 's1', arquivos: commitsDe(1, 100)[0].arquivos },
+    { sha: 's2', arquivos: commitsDe(1, 50)[0].arquivos },
+    { sha: 's3', arquivos: commitsDe(1, 1)[0].arquivos },
+  ];
+  assert.deepEqual(decidir(estadoBase({ commits, local: 's3' })), { acao: 'empurrar', alvo: 's2' });
+});
+
+test('decidir: commit em .github na posição 40 limita o lote a 30 e continua retido', () => {
+  const commits = commitsDe(45);
+  commits[39] = { sha: 's40', arquivos: ['.github/workflows/x.yml'] };
+  assert.deepEqual(decidir(estadoBase({ commits, local: 's45' })), { acao: 'empurrar', alvo: 's30', retido: 's40' });
+});
+
+// --- o Agendador espera o ciclo ---
+
+test('o empurrar.vbs espera o node terminar, para o IgnoreNew do Agendador valer', () => {
+  const vbs = readFileSync(join(raiz, 'ferramentas', 'tarefa', 'empurrar.vbs'), 'utf8');
+  assert.match(vbs, /, 0, True\s*$/);
 });

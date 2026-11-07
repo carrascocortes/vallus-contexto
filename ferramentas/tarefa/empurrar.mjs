@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 
 const PASTA_DO_PERFIL = join(homedir(), '.vallus-contexto');
 const PADROES = {
@@ -14,10 +14,29 @@ const PADROES = {
   log: join(PASTA_DO_PERFIL, 'empurrar.log'),
 };
 const MAIN = 'refs/heads/main';
-const ZEROS = '0'.repeat(40);
 const MAX_BUFFER = 64 * 1024 * 1024;
 const TIMEOUT_MS = 5 * 60 * 1000;
 const TOCA_CI = /^\.(github|githooks)\//;
+const MAX_COMMITS_POR_CICLO = 30;
+const MAX_ARQUIVOS_POR_CICLO = 150;
+const PASTA_DA_TRAVA = '.githooks';
+
+// O maior prefixo que cabe nos dois tetos, para a trava terminar dentro do prazo mesmo com muito atraso.
+// O primeiro commit sobe sozinho ainda que passe do teto de arquivos: sem ele o ciclo nunca andaria.
+function ultimoDoLote(commits) {
+  let arquivos = 0;
+  let ultimo = commits[0];
+  for (const [i, commit] of commits.entries()) {
+    arquivos += commit.arquivos.length;
+    if (i >= MAX_COMMITS_POR_CICLO || (i > 0 && arquivos > MAX_ARQUIVOS_POR_CICLO)) break;
+    ultimo = commit;
+  }
+  return ultimo.sha;
+}
+
+function motivoDeRemotoForaDoLocal(estado) {
+  return estado.localEhAncestral ? 'o GitHub está à frente do main local' : 'histórico divergente';
+}
 
 /** Decide a ação do ciclo só a partir do estado já lido; não faz I/O. */
 export function decidir(estado) {
@@ -25,14 +44,17 @@ export function decidir(estado) {
   if (estado.hooksPath !== '.githooks') return { acao: 'parar', motivo: 'hook desligado' };
   if (estado.remoto === null) return { acao: 'parar', motivo: 'GitHub inacessível' };
   if (estado.remoto === estado.local) return { acao: 'nada' };
-  if (estado.remoto !== '' && !estado.remotoEhAncestral) return { acao: 'parar', motivo: 'histórico divergente' };
+  if (estado.remoto !== '' && !estado.remotoEhAncestral) {
+    return { acao: 'parar', motivo: motivoDeRemotoForaDoLocal(estado) };
+  }
   if (estado.merges.length > 0) return { acao: 'parar', motivo: 'merge no main' };
 
   const posicao = estado.commits.findIndex((commit) => commit.arquivos.some((arquivo) => TOCA_CI.test(arquivo)));
-  if (posicao === -1) return { acao: 'empurrar', alvo: estado.local };
-  const retido = estado.commits[posicao].sha;
+  const retido = posicao === -1 ? undefined : estado.commits[posicao].sha;
   if (posicao === 0) return { acao: 'reter', retido };
-  return { acao: 'empurrar', alvo: estado.commits[posicao - 1].sha, retido };
+  const sobem = posicao === -1 ? estado.commits : estado.commits.slice(0, posicao);
+  const alvo = sobem.length === 0 ? estado.local : ultimoDoLote(sobem);
+  return retido === undefined ? { acao: 'empurrar', alvo } : { acao: 'empurrar', alvo, retido };
 }
 
 // --- Git ---
@@ -116,14 +138,28 @@ function lerEstado(opcoes) {
     const hooksPath = lerHooksPath(opcoes);
     const local = lerOuFalhar(opcoes, ['rev-parse', '--verify', MAIN]).trim();
     const { sha: remoto, detalhe: detalheDoRemoto } = lerRemoto(opcoes);
-    const estado = { hooksPath, local, remoto, detalheDoRemoto, remotoEhAncestral: false, merges: [], commits: [] };
+    const estado = {
+      hooksPath,
+      local,
+      remoto,
+      detalheDoRemoto,
+      remotoEhAncestral: false,
+      localEhAncestral: false,
+      merges: [],
+      commits: [],
+    };
     if (remoto === null || remoto === local) return estado;
 
-    let alcance = MAIN;
+    // Tudo daqui em diante usa o SHA lido acima, e não o nome do main: se a sessão mexer no main durante o
+    // ls-remote, o alvo continua sendo o que foi varrido.
+    let alcance = local;
     if (remoto !== '') {
-      estado.remotoEhAncestral = rodarGit(opcoes, ['merge-base', '--is-ancestor', remoto, MAIN]).status === 0;
-      if (!estado.remotoEhAncestral) return estado;
-      alcance = `${remoto}..${MAIN}`;
+      estado.remotoEhAncestral = rodarGit(opcoes, ['merge-base', '--is-ancestor', remoto, local]).status === 0;
+      if (!estado.remotoEhAncestral) {
+        estado.localEhAncestral = rodarGit(opcoes, ['merge-base', '--is-ancestor', local, remoto]).status === 0;
+        return estado;
+      }
+      alcance = `${remoto}..${local}`;
     }
     estado.merges = linhas(lerOuFalhar(opcoes, ['rev-list', '--min-parents=2', alcance]));
     const shas = linhas(lerOuFalhar(opcoes, ['rev-list', '--reverse', '--topo-order', alcance]));
@@ -135,22 +171,85 @@ function lerEstado(opcoes) {
   }
 }
 
-/** Roda a trava do clone sobre o intervalo que vai subir; cherry-pick -e, revert -e e --no-verify pulam os hooks. */
+function lerBlob(opcoes, sha) {
+  const resultado = spawnSync('git', ['cat-file', 'blob', sha], {
+    cwd: opcoes.clone,
+    maxBuffer: opcoes.maxBuffer,
+    windowsHide: true,
+  });
+  if (resultado.error) throw new ErroDeLeitura(`falha ao executar o Git: ${resultado.error.code ?? resultado.error.message}`);
+  if (resultado.status !== 0) throw new ErroDeLeitura(`cat-file saiu com ${resultado.status}`);
+  return resultado.stdout;
+}
+
+// Grava os arquivos de .githooks do commit dado numa pasta nova, sem tocar no índice nem na árvore do clone.
+// Só arquivo comum entra: link simbólico e submódulo não são código que a trava possa precisar.
+function extrairHooksDoCommit(opcoes, commit, pasta) {
+  const saida = lerOuFalhar(opcoes, ['ls-tree', '-r', '-z', commit, '--', PASTA_DA_TRAVA]);
+  let gravouATrava = false;
+  for (const entrada of saida.split('\0').filter(Boolean)) {
+    const tabulacao = entrada.indexOf('\t');
+    const [modo, tipo, sha] = entrada.slice(0, tabulacao).split(' ');
+    const caminho = entrada.slice(tabulacao + 1);
+    if (tipo !== 'blob' || (modo !== '100644' && modo !== '100755')) continue;
+    const destino = resolve(pasta, caminho);
+    if (!destino.startsWith(`${resolve(pasta)}${sep}`)) throw new ErroDeLeitura('caminho fora da pasta temporária');
+    mkdirSync(dirname(destino), { recursive: true });
+    writeFileSync(destino, lerBlob(opcoes, sha));
+    if (caminho === `${PASTA_DA_TRAVA}/trava.mjs`) gravouATrava = true;
+  }
+  return gravouATrava;
+}
+
+/**
+ * Roda a trava do último commit que já está no GitHub, e nunca a do disco: uma sessão que afrouxe a trava sem
+ * commitar não pode desligar a conferência antes do push. A mudança em .githooks só chega ao GitHub pelo PO.
+ */
 function rodarTrava(opcoes, remoto, alvo) {
-  const env = { ...process.env };
-  delete env.GIT_SSH_COMMAND;
-  const resultado = spawnSync(
-    process.execPath,
-    [join(opcoes.clone, '.githooks', 'trava.mjs'), '--push', remoto || ZEROS, alvo],
-    { cwd: opcoes.clone, env, encoding: 'utf8', timeout: TIMEOUT_MS, windowsHide: true },
-  );
-  return resultado.error ? null : resultado.status;
+  if (!remoto) return { semTrava: true };
+  const pasta = mkdtempSync(join(tmpdir(), 'vallus-trava-'));
+  try {
+    if (!extrairHooksDoCommit(opcoes, remoto, pasta)) return { semTrava: true };
+    const env = { ...process.env };
+    delete env.GIT_SSH_COMMAND;
+    const resultado = spawnSync(process.execPath, [join(pasta, PASTA_DA_TRAVA, 'trava.mjs'), '--push', remoto, alvo], {
+      cwd: opcoes.clone,
+      env,
+      encoding: 'utf8',
+      timeout: opcoes.tempoDaTrava,
+      windowsHide: true,
+    });
+    if (resultado.error?.code === 'ETIMEDOUT') return { passouDoTempo: true };
+    return { status: resultado.error ? null : resultado.status };
+  } catch (erro) {
+    if (!(erro instanceof ErroDeLeitura)) throw erro;
+    return { status: null };
+  } finally {
+    // Se o sistema ainda segura um arquivo da pasta, o resíduo fica na pasta temporária do sistema.
+    try {
+      rmSync(pasta, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch {
+      // nada a fazer além de seguir
+    }
+  }
+}
+
+function motivoDaTrava(resultado) {
+  if (resultado.semTrava) return 'a trava não está no GitHub';
+  if (resultado.passouDoTempo) return 'a trava passou do tempo';
+  return resultado.status === 1 ? 'a trava recusou o intervalo' : 'a trava falhou';
+}
+
+// A primeira linha do Git que não é o "To <url>" do cabeçalho do push.
+function motivoDoPush(erro, status) {
+  const linha = erro.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('To '));
+  return linha ?? `o push saiu com ${status}`;
 }
 
 function empurrar(opcoes, alvo) {
   try {
     const resultado = rodarGit(opcoes, ['push', '--quiet', opcoes.url, `${alvo}:${MAIN}`], { rede: true });
-    if (resultado.status !== 0) return primeiraLinha(resultado.erro) || `o push saiu com ${resultado.status}`;
+    if (resultado.status !== 0) return motivoDoPush(resultado.erro, resultado.status);
     rodarGit(opcoes, ['update-ref', 'refs/remotes/origin/main', alvo]);
     return undefined;
   } catch (erro) {
@@ -239,16 +338,17 @@ function ciclo(opcoes, { avisar, agora }) {
   let decisao = decidir(estado);
 
   if (decisao.acao === 'empurrar') {
-    const saida = rodarTrava(opcoes, estado.remoto, decisao.alvo);
-    if (saida !== 0) {
-      decisao = { acao: 'parar', motivo: saida === 1 ? 'a trava recusou o intervalo' : 'a trava falhou' };
-    }
+    const resultado = rodarTrava(opcoes, estado.remoto, decisao.alvo);
+    if (resultado.status !== 0) decisao = { acao: 'parar', motivo: motivoDaTrava(resultado) };
   }
 
   const falhaDoPush = decisao.acao === 'empurrar' ? empurrar(opcoes, decisao.alvo) : undefined;
   const chave = chaveDaSituacao({ decisao, falhaDoPush, dia });
   const detalheDoRemoto = estado.remoto === null ? estado.detalheDoRemoto : undefined;
-  const descricao = [decisao.acao, decisao.motivo, detalheDoRemoto, falhaDoPush, `chave=${chave}`].filter(Boolean).join(' | ');
+  const empurrado = decisao.acao === 'empurrar' && falhaDoPush === undefined ? `empurrado ${decisao.alvo}` : undefined;
+  const descricao = [decisao.acao, decisao.motivo, empurrado, detalheDoRemoto, falhaDoPush, `chave=${chave}`]
+    .filter(Boolean)
+    .join(' | ');
   registrar(opcoes, { avisar, agora, chave, descricao });
 }
 
@@ -264,13 +364,13 @@ function registrarOpcaoInvalida(argv, erro, agora) {
 }
 
 /** Um ciclo da tarefa agendada. Não lança: o que der errado vira aviso e linha de log. Saída 2 = opção inválida. */
-export function main(argv, { avisar, agora = new Date(), maxBuffer = MAX_BUFFER }) {
+export function main(argv, { avisar, agora = new Date(), maxBuffer = MAX_BUFFER, tempoDaTrava = TIMEOUT_MS }) {
   const { opcoes: lidas, erro } = lerOpcoes(argv);
   if (erro) {
     registrarOpcaoInvalida(argv, erro, agora);
     return 2;
   }
-  const opcoes = { ...lidas, maxBuffer };
+  const opcoes = { ...lidas, maxBuffer, tempoDaTrava };
   try {
     ciclo(opcoes, { avisar, agora });
     return 0;
