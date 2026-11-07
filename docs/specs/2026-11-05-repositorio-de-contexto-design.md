@@ -1,8 +1,9 @@
 # Repositório de contexto: frentes, memória e passagem de turno para Claude, Codex e o escritório
 
 **Data:** 2026-11-05
-**Estado:** proposta do Claude. O PO decidiu as perguntas QC1 a QC13 em 2026-11-05 (seção 2). Entra no primeiro
-commit deste repositório, feito pelo PO na F0 (QC10). As escolhas marcadas como do Claude seguem vetáveis.
+**Estado:** proposta do Claude. O PO decidiu as perguntas QC1 a QC13 em 2026-11-05 (seção 2). Está neste
+repositório desde o primeiro commit, feito pelo PO na F0 (QC10). A F0 terminou em 2026-11-06, com os aceites cumpridos
+e uma conferência fora deles ainda pendente (seção 6). As escolhas marcadas como do Claude seguem vetáveis.
 **Frente própria**, decidida pelo PO em 05/11 (D9 do adendo do projeto 2). Não faz parte do projeto 2, mas a pasta da
 frente do projeto 2 passa a morar aqui (seção 4.8), e a F1 dele depende disso.
 **Fontes lidas em 05/11:** o adendo do projeto 2 na versão do commit `ffc33c5` (21:31, já com a D3 e a D7 a D9
@@ -169,8 +170,11 @@ descartado. As demais escolhas desta spec são técnicas, estão marcadas como e
   - (b) se o plano da conta tem regra de push por caminho. Se tiver, a regra liga para `.github/**`; ela bloqueia o PO
     também, e o PO a desliga para mudar o CI. Se não tiver, fica registrado como limite.
 
-  Se a chave não conseguir alterar o workflow, a tarefa agendada avisa o PO quando o push falha. O procedimento para
-  mudar o CI com a regra ligada está na seção 4.6.
+  **Resultado da F0 (2026-11-06):** (a) a chave altera `.github/workflows/`, porque o push dela com o workflow
+  provisório foi aceito; (b) o plano não tem regra de push por caminho, porque a tela de rulesets só oferece branch
+  ruleset, tag ruleset e importação. Com o que a F0 testou, nada no GitHub segura um commit da chave em `.github/`, e o
+  limite fica registrado. Contra o descuido, a tarefa agendada segura esse commit até o PO conferir (seção 4.6); quem
+  quer burlar continua passando (seção 7).
 - **QC13. Lições e índice. Decisão do PO (2026-11-05): "Aviso também nas lições".** As lições, as referências e o índice
   também são lidos por toda sessão e gravados por qualquer uma. O job de aviso passa a cobrir `memoria/INDICE.md`,
   `memoria/licoes/` e `memoria/referencias/`, e a janela da seção 7 vale para eles também. A `passagem.md` e as entradas
@@ -414,7 +418,8 @@ a ter uma fonte.
 > rápida não precisa. O que estiver lá é contexto: se contradisser este arquivo, vale este arquivo. Estado de frente não
 > se grava na memória automática da ferramenta.
 > Commit nesse repositório chega ao GitHub em até uma hora por uma tarefa agendada, sem ok do PO a cada push. A exceção
-> vale só para esse repositório e só para o main, sem push forçado. Nenhuma sessão faz push nele.
+> vale só para esse repositório e só para o main, sem push forçado. Nenhuma sessão faz push nele. Um commit que toca
+> `.github/` ou `.githooks/` espera o PO, e os que vêm depois dele esperam junto.
 > Se a variável `VALLUS_OFFICE_MESA` estiver no ambiente, esta sessão é agente de mesa do escritório: não leia nem
 > grave `C:\dev\vallus-contexto`. O contexto já está na pasta de cópia da mesa.
 
@@ -511,11 +516,14 @@ que não são segredo); o e-mail do PO como autor de commit.
      trouxe. É a mesma lição da INV-4 do adendo.
 
    **Limites:** é detecção depois do push, não prevenção. Quem escreve no clone consegue mudar esses arquivos, e as
-   sessões os leem antes de o aviso existir (seção 7). No push, o GitHub roda o workflow do commit enviado: um commit
-   que apaga o job de aviso junto com a mudança que ele avisaria sobe sem disparar nada, e o `gitleaks` do CI cai junto
-   (QC12). O aviso pega mudança descuidada, não quem quer burlar. A F0 testa a chave de deploy e a regra de push por
-   caminho que reduziriam isso (QC12). O push protection de segredo do GitHub em repositório privado pessoal pode ser
-   pago; fica para o checklist de fornecedor (skill `fornecedor`), e não se conta com ele.
+   sessões os leem antes de o aviso existir (seção 7). No push, o GitHub roda o workflow na versão do commit enviado, e
+   o push pela chave de deploy dispara o workflow (documentação do Actions, seção 6): um commit que apaga o job de aviso
+   junto com a mudança que ele avisaria sobe sem disparar nada, e o `gitleaks` do CI cai junto (QC12). Se o CI ler os
+   padrões de `.githooks/`, uma mudança ali enfraquece o pre-commit e o CI juntos; é mais um motivo para a tarefa reter
+   o commit em `.githooks/` (seção 4.6). O aviso pega mudança descuidada, não quem quer burlar. A F0 mostrou que
+   a chave de deploy altera o workflow e que o plano não tem regra de push por caminho; com o que ela testou, nada no
+   GitHub reduz isso (QC12). O push protection de segredo do GitHub em repositório privado pessoal pode ser pago; fica
+   para o checklist de fornecedor (skill `fornecedor`), e não se conta com ele.
 5. **Revisão periódica do PO** sobre as lições e uma amostra das entradas. É a única camada que pega prosa de cliente.
 
 **Se vazar:** segredo é tratado como comprometido e rotacionado na hora, antes de qualquer limpeza. Tirar do histórico
@@ -527,31 +535,59 @@ clone local e o GitHub guardam a versão vazada até lá: é por isso que o pre-
 - **Histórico:** o Git. Commits pequenos, um por marco ou por entrada, autor identificando ferramenta e modelo. Nenhum
   rebase, amend ou push forçado no main.
 - **Backup:** o remoto privado `carrascocortes/vallus-contexto` no GitHub (QC1), com o main protegido contra push
-  forçado e contra deleção. A regra de proteção em repositório privado pessoal depende do plano do GitHub; a do
-  `GRC-SaaS` já funciona, mas o repositório novo é para conferir.
+  forçado e contra deleção. A F0 conferiu: o ruleset `main` recusa o push forçado. A deleção do main é recusada pela
+  trava da branch padrão do GitHub antes de chegar ao ruleset, então a regra de deleção do ruleset não foi exercida;
+  ela só pesa se a branch padrão mudar.
 - **Push (QC5):** uma tarefa agendada do Windows, a cada hora, com uma chave de deploy que só escreve neste repositório.
-  A perda máxima com o disco perdido é a última hora de commits. O `LEIA-ME` e o ponteiro (seção 4.4) registram a
-  exceção: o commit neste repositório chega ao GitHub em até uma hora, sem ok do PO a cada push, só neste repositório e
-  só no main, sem push forçado. Sem ADR. **Escolhas do Claude, vetáveis:**
+  A perda máxima com o disco perdido é a última hora de commits, ou, com um commit retido pela trava de `.github/` e
+  `.githooks/` (abaixo), tudo desde o último push. O `LEIA-ME` e o ponteiro (seção 4.4) registram a exceção: o commit
+  neste repositório chega ao GitHub em até uma hora, sem ok do PO a cada push, só neste repositório e só no main, sem
+  push forçado, salvo o que espera atrás de um commit retido. Sem ADR. **Escolhas do Claude, vetáveis:**
   - a chave e o script da tarefa ficam no perfil do PO, fora de `C:\dev` e do clone, no mesmo lugar e com a mesma ACL,
     só do usuário dele;
-  - a tarefa empurra só o main; se o plano permitir, um ruleset barra criar branch, e a chave não empurra outra branch;
-    se não permitir, fica registrado como limite;
+  - a tarefa empurra só o main; o ruleset `so-main` barra criar branch, e a F0 provou que a chave não cria outra;
   - antes de empurrar, a tarefa confere o `core.hooksPath` (seção 4.5);
-  - quando o push falha, inclusive por histórico divergente ou por workflow recusado (QC12), a tarefa avisa o PO. O
-    canal do aviso fica para a construção;
+  - a tarefa fala com o GitHub só pela chave, com um `known_hosts` próprio na mesma pasta e sem ler o `~/.ssh`;
+  - quando o push falha, inclusive por histórico divergente ou por regra do GitHub, ou quando a tarefa retém um commit,
+    ela avisa o PO. O canal do aviso fica para a construção, mas tem de chegar ao PO, e não só a um log: com um commit
+    retido, só o PO destrava o backup;
   - a tarefa tem um disparo manual de teste, que empurra para o repositório descartável da F1, e nunca para o main, o
     que leva valor plantado (seção 6).
-- **Mudar o CI com a regra de `.github/**` ligada (QC12; escolha do Claude, vetável).** O PO confere os commits que vão
-  subir e que tocam `.github/` e `.githooks/`, desliga a regra, dispara a tarefa uma vez e religa a regra logo depois do
-  push. É o mesmo procedimento do commit da F1 que troca o workflow provisório da F0 pelo de verdade. Se a F0 mostrar
-  que o plano não tem a regra, o passo de desligar e religar não existe, e o limite fica registrado.
+- **Mudar o CI (QC12; escolha do Claude, vetável).** A F0 mostrou que o plano não tem regra de push por caminho: não há
+  regra para desligar e religar, e, com o que a F0 testou, nada no GitHub segura um commit da chave em `.github/`. No
+  lugar da regra, a tarefa não empurra commit que toque `.github/` ou `.githooks/`:
+  - ela empurra só até o commit anterior e avisa o PO;
+  - o histórico é uma linha só, então todo commit posterior ao retido, de qualquer frente, espera junto, e o prazo
+    passa a ser o do PO;
+  - o PO confere os commits retidos e empurra com o próprio login até o último que conferiu, pelo SHA dele
+    (`<sha>:main`), e não o HEAD, se houver commit não conferido depois; daí em diante a tarefa volta a empurrar
+    sozinha;
+  - a retenção se repete a cada mudança em `.githooks/`, inclusive a exceção de falso positivo da seção 4.5;
+  - vale também para os commits da F1 que criam o pre-commit e que trocam o workflow provisório da F0 pelo de verdade.
+
+  Essa trava mora no script da tarefa, que um agente do mesmo usuário altera (D3), e a chave empurra sem passar por ela:
+  pega o descuido, não quem quer burlar. Enquanto um commit está retido, o backup volta a depender do PO, o que a QC5
+  quis evitar; a outra saída é a tarefa empurrar tudo e confiar só no aviso do CI, que um commit em `.github/` pode
+  apagar.
+
+  **Alternativa avaliada e não adotada (escolha do Claude, vetável): trocar a chave por uma credencial sem a permissão
+  de workflows**, um GitHub App só deste repositório ou um fine-grained token sem "Workflows". O GitHub recusa que ela
+  crie ou altere arquivo em `.github/workflows/` (documentado para o GitHub App; para o fine-grained token, só relatos).
+  Ficam três buracos:
+  - nenhuma fonte diz se ela consegue apagar um workflow, e apagar o job de aviso é justamente o ataque da QC12;
+  - a recusa não cobre `.githooks/` nem script fora de `.github/workflows/` que o workflow chame;
+  - um agente do mesmo usuário (D3) alcança a credencial de login do PO no gerenciador de credenciais do Windows, que
+    tem permissão de workflows.
+
+  O ganho sobre a trava da tarefa é pequeno. A troca volta à mesa se a fase remota tirar os agentes do usuário do PO,
+  e antes dela um teste num repositório descartável tem de mostrar se apagar workflow é recusado.
 - **Um clone só.** Ninguém faz pull: o único clone é o da máquina do PO, e o remoto só recebe. Uma segunda máquina, ou
   o escritório na fase remota, reabre esta seção (merge, conflito, quem puxa).
 - **Restauração:** clonar do GitHub e reativar o hook (`git config core.hooksPath .githooks`); o clone novo nasce sem
   ele. O aceite da F4 prova isso rodando no clone novo os casos de pre-commit do teste da F1.
 - **O que fica sem backup, de propósito:** a saída bruta das execuções e os artefatos do QA, com a retenção da D4 do
-  adendo (seção 4.8); as entradas retidas, até o PO liberar ou descartar (seção 4.3); e as memórias das ferramentas.
+  adendo (seção 4.8); as entradas retidas, até o PO liberar ou descartar (seção 4.3); os commits que esperam atrás de
+  um commit retido em `.github/` ou `.githooks/`, até o PO empurrar; e as memórias das ferramentas.
 
 ### 4.7 A memória de hoje: migra por triagem (QC3 e QC4)
 
@@ -669,24 +705,55 @@ conteúdo migrado.
   - esta spec está em `docs/specs/` no primeiro commit, sem o caminho da pasta de notas, que leva um id em UUID (QC10,
     seção 9);
   - teste empírico da QC12, com o resultado registrado: (a) a chave consegue ou não alterar `.github/workflows/`, com um
-    workflow provisório que só imprime uma linha e que a F1 substitui; (b) o
-    plano da conta tem ou não regra de push por caminho. Se tiver, a regra está ligada para `.github/**`, com a chave
-    fora da lista de exceções, e um push da chave que toca `.github/**` é recusado pelo GitHub; o resultado fica
-    registrado. Se não tiver, o limite está registrado;
+    workflow provisório que só imprime uma linha e que a F1 substitui; (b) o plano da conta tem ou não regra de push por
+    caminho. Se tiver, a regra está ligada para `.github/**`, com a chave fora da lista de exceções, e um push da chave
+    que toca `.github/**` é recusado pelo GitHub; o resultado fica registrado. Se não tiver, o limite está registrado;
   - o plano permite ou não um ruleset que barre criar branch, com o resultado registrado (seção 4.6).
+
+  **Resultado (2026-11-06).** O Claude preparou os dois commits, a chave e a pasta dela; o PO rodou os testes com um
+  roteiro que empurra pela chave e cadastrou a chave e os rulesets no GitHub. Todos os aceites foram cumpridos:
+  - o repositório existe, privado, com o clone em `C:\dev\vallus-contexto`. O primeiro commit (`281d7a7`) leva esta
+    spec, sem nenhum UUID, e subiu com o login do PO;
+  - a chave de deploy é ed25519, sem senha, e mora em `%USERPROFILE%\.vallus-contexto\`, fora de `C:\dev` e do clone. A
+    pasta tem ACL só do usuário do PO, sem herança. O PO conferiu na tela que a chave foi cadastrada com escrita. Na
+    mesma pasta fica o `known_hosts` do GitHub, tirado da API do GitHub e conferido com a página oficial de impressões
+    digitais;
+  - (a) a chave altera `.github/workflows/`: o push dela com o workflow provisório (`44ead89`) foi aceito;
+  - o push forçado no main foi recusado pelo ruleset `main` (`GH013`, "Cannot force-push to this branch");
+  - a deleção do main foi recusada pela trava da branch padrão do GitHub ("refusing to delete the current branch"),
+    antes de chegar ao ruleset. A regra de deleção do ruleset `main` não foi exercida (seção 4.6);
+  - criar branch pela chave foi recusado pelo ruleset `so-main` (`GH013`, "Cannot create ref due to creations being
+    restricted"), que vale para toda branch menos o main. Criar tag não foi testado, e um branch ruleset não alcança
+    tag (seção 7);
+  - (b) o plano não tem regra de push por caminho: a tela de rulesets só oferece "New branch ruleset", "New tag
+    ruleset" e "Import a ruleset". O limite fica registrado, e a seção 4.6 diz o que entra no lugar;
+  - no fim, o main do GitHub ficou no `44ead89`, igual ao clone, sem branch nem commit de teste sobrando.
+
+  O que a documentação do GitHub diz sobre esses resultados (consultada em 2026-11-06):
+  - o evento de push usa o workflow na versão do commit enviado (página "Workflows", seção dos gatilhos), e a página de
+    eventos descreve o push feito por chave de deploy disparando o workflow;
+  - rulesets de branch e de tag valem em repositório privado de conta pessoal só no plano Pro (pelo relato de um
+    usuário, no Free a tela avisa que não serão aplicados). O push ruleset só existe no plano Team, que é de
+    organização (seção 7);
+  - chave de deploy com escrita age como colaborador e não tem restrição de workflow, o que bate com o teste (a).
+
+  Fora dos aceites, fica uma conferência: ver na aba Actions do repositório se o workflow provisório rodou no push do
+  `44ead89`. A documentação já sustenta as duas premissas da seção 4.5; a aba as confirma neste repositório. Quem
+  confere é o PO, antes do primeiro aceite da F1 que depende do CI.
 - **F1. Esqueleto, contrato e tarefa.** `LEIA-ME.md`, estrutura da seção 4.1, `.gitattributes`, pre-commit, CI, modelos
-  de `frente.md`, `passagem.md`, entrada, decisão e lição, a tarefa agendada e os resultados da F0 registrados nesta
-  spec.
+  de `frente.md`, `passagem.md`, entrada, decisão e lição, e a tarefa agendada.
   - **A tarefa nasce aqui** (QC5), com a chave da F0, antes dos aceites que dependem de push: nenhuma sessão faz push. O
     script fica no mesmo lugar e com a mesma ACL da chave (seção 4.6).
-  - **O commit que troca o workflow provisório da F0** pelo de verdade, no main, segue o procedimento de mudar o CI da
-    seção 4.6.
+  - **Os commits que criam o pre-commit e que trocam o workflow provisório da F0** pelo de verdade seguem o procedimento
+    de mudar o CI da seção 4.6: a tarefa os retém, e o PO os empurra.
   - **Pushes de teste com valor plantado** vão para um repositório descartável, com o mesmo `.github/` e `.githooks/`,
     criado e apagado pelo PO na F1, e não para o main, onde o valor ficaria no histórico. Quem empurra é a tarefa, no
     disparo manual de teste, com uma chave de deploy do descartável, ou o PO. Os casos de aviso sem valor plantado
     rodam no main.
   - **O teste com o hook desligado usa `git commit --no-verify`,** porque a tarefa recusa empurrar com o
     `core.hooksPath` errado.
+  - **Ruleset de tag (escolha do Claude, vetável):** o PO cria um tag ruleset com "Restrict creations" para todas as
+    tags, como fez com o `so-main` para as branches. A F0 não testou tag, e o `so-main` não alcança tag (seção 7).
 
   Aceite:
   - o commit é recusado com cada um destes plantados num arquivo: chave de API no formato de um provedor, chave PEM,
@@ -695,8 +762,8 @@ conteúdo migrado.
   - o mesmo UUID no campo `sessao:` do cabeçalho passa; dão vermelho uma linha `sessao: <uuid>` no corpo, um segundo
     bloco `---` no meio do arquivo e dois UUIDs no campo;
   - o mesmo valor, empurrado ao descartável com `--no-verify`, faz o job do CI falhar;
-  - um commit que toca o `LEIA-ME`, `.githooks/`, `.gitattributes` ou `.github/` faz o job de aviso falhar (QC12); o de
-    `.github/` segue o procedimento da seção 4.6;
+  - um commit que toca o `LEIA-ME`, `.githooks/`, `.gitattributes` ou `.github/` faz o job de aviso falhar (QC12); os
+    de `.github/` e `.githooks/` seguem o procedimento da seção 4.6 (a tarefa os retém, e o PO os empurra);
   - um commit que toca o `decisoes.md` de uma frente, ou um arquivo da pasta `decisoes/`, faz o job de aviso falhar
     (QC11);
   - um commit que toca `memoria/INDICE.md`, uma lição ou uma referência faz o job de aviso falhar (QC13);
@@ -706,8 +773,10 @@ conteúdo migrado.
     falhar;
   - no descartável, um push com `before` zerado e dois commits, só o primeiro com CPF plantado, faz o job do CI falhar;
   - lição sem linha no `INDICE.md` é recusada;
-  - a tarefa empurra só o main, e a chave não empurra outra branch (pelo ruleset, se a F0 mostrou que existe; senão, o
-    limite está registrado);
+  - a tarefa empurra só o main, e a chave não cria outra branch (o ruleset `so-main` recusa, como na F0) nem tag (o
+    ruleset de tag recusa);
+  - com um commit que toca `.github/` ou `.githooks/` no meio do intervalo, a tarefa empurra só até o commit anterior e
+    avisa o PO; depois que o PO empurra esse commit com o próprio login, a tarefa volta a empurrar o resto (seção 4.6);
   - a tarefa avisa o PO quando o push falha, inclusive por histórico divergente;
   - com `core.hooksPath` diferente de `.githooks`, a tarefa não empurra e avisa o PO;
   - o repositório descartável foi apagado ao fim da F1.
@@ -743,7 +812,8 @@ conteúdo migrado.
   - uma entrada de sessão manual com um CPF plantado é movida pela trava para `retidas\`; o commit repetido leva só o
     esboço `desfecho: retido`, e o texto não fica em `frentes/` (QC8);
   - duas sessões em frentes diferentes fazendo commit ao mesmo tempo não levam o arquivo uma da outra;
-  - os commits chegam ao GitHub em até uma hora, pela tarefa agendada (QC5);
+  - os commits chegam ao GitHub em até uma hora, pela tarefa agendada (QC5), salvo os que esperam atrás de um commit
+    retido em `.github/` ou `.githooks/`;
   - um clone novo do GitHub numa pasta vazia, com o hook reativado, tem o mesmo conteúdo do clone local no último commit
     enviado, e os casos de pre-commit do teste da F1 passam nele;
   - duas semanas depois do corte, nenhum `project_*` novo na memória do Claude.
@@ -763,11 +833,12 @@ conteúdo migrado.
   numa lição, numa referência ou no índice um texto falso, por exemplo uma decisão assinada "Quem decidiu: PO". A tarefa
   agendada o publica sem o ok do PO (QC5).
   - **A janela:** o aviso do CI só dispara depois do push, e as sessões leem o clone local, não o GitHub. Entre a
-    gravação e o próximo push (até uma hora), e daí até o PO ler o aviso, toda sessão que abre a frente já lê o texto
-    falso como contexto.
+    gravação e o próximo push (até uma hora, ou mais, se houver commit retido em `.github/` ou `.githooks/` antes dele),
+    e daí até o PO ler o aviso, toda sessão que abre a frente já lê o texto falso como contexto.
   - **O aviso pode nem disparar:** o commit que apaga o job de aviso junto com o texto falso sobe sem disparar nada, e o
-    `gitleaks` do CI cai junto (QC12). O aviso pega mudança descuidada, não quem quer burlar; a F0 mede o quanto a chave
-    e a regra por caminho reduzem isso.
+    `gitleaks` do CI cai junto (QC12). O aviso pega mudança descuidada, não quem quer burlar. Com o que a F0 testou,
+    nada no GitHub reduz isso: a chave altera o workflow e o plano não tem regra por caminho. A tarefa segurar o commit
+    em `.github/` (seção 4.6) pega o descuido; um agente que altera o script dela ou usa a chave passa.
   - A frase do ponteiro (vale o `AGENTS.md`) e a INV-C3 limitam o que o texto falso consegue mandar, mas não impedem que
     oriente o trabalho. Reduz, não fecha: fica junto do risco aceito na D3.
 - **Duas sessões na mesma frente.** O bilhete `sessao_aberta` e a combinação com o PO (seção 4.3). Duas gravando o mesmo
@@ -787,8 +858,13 @@ conteúdo migrado.
   limita o alcance do risco aceito.
 - **Chave de deploy e script da tarefa no disco** (QC5): ficam no perfil do PO, fora de `C:\dev` e do clone, com ACL só
   do usuário. Um agente do mesmo usuário os lê e pode alterar o script (D3). O impacto fica no que a chave consegue e o
-  GitHub aceita: escrever neste repositório, sem push forçado no main, e numa branch nova só se a F0 mostrar que não há
-  ruleset para barrar.
+  GitHub aceita, medido na F0: avançar o main, inclusive com mudança no `.github/`, sem push forçado e sem criar branch.
+  Criar tag não foi testado: o `so-main` é branch ruleset e não alcança tag, então, até o ruleset de tag da F1, a chave
+  provavelmente cria tag apontando para um commit qualquer, e um workflow `on: push` sem filtro de branch roda nesse
+  push.
+- **Os rulesets dependem do plano Pro.** Em repositório privado de conta pessoal, rulesets só valem no Pro (seção 6). Se
+  a conta voltar ao Free, eles deixam de valer, e a tela só avisa quando alguém a abre. O main fica protegido apenas
+  pela trava da branch padrão contra deleção, e o push forçado e a branch nova passam. A tarefa não percebe a mudança.
 - **Busca com acento no Windows:** o `grep` do git-bash erra com `ç`, `ã` e `é`. O `LEIA-ME` manda usar a ferramenta de
   busca da sessão (ripgrep).
 
@@ -806,8 +882,8 @@ O que só se pega com teste próprio, porque nenhum compilador olha estes arquiv
 - o intervalo `before..after` do push: 3 commits em que só o primeiro toca um `decisoes.md`; com `--no-verify`, um
   commit que planta um CPF e o seguinte que o apaga; e, com `before` zerado, dois commits em que só o primeiro planta um
   CPF. Os três têm de fazer o CI falhar, e os dois com valor plantado rodam no repositório descartável (F1);
-- o teste empírico da chave de deploy em `.github/workflows/` e da regra de push por caminho, com o push da chave que
-  toca `.github/**` recusado quando a regra existe (F0, QC12);
+- a tarefa que segura o commit em `.github/` ou `.githooks/`, empurra só até o anterior e avisa o PO (F1, QC12). O
+  teste empírico da chave e da regra de push por caminho foi feito na F0 (seção 6);
 - a sessão com `VALLUS_OFFICE_MESA` que não lê o repositório, e as tentativas de dentro da mesa, no Claude e no Codex,
   de ler e gravar o repositório e as retidas por Read, Write ou Edit, Bash e PowerShell, com o caminho expandido e as
   duas barras, cada uma negada (F2);
