@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { caminhoVigiado } from '../.githooks/lib/caminhos.mjs';
 import { git, repoTemporario } from './git.mjs';
+import * as gerar from './gerar.mjs';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const aviso = join(raiz, '.githooks', 'aviso.mjs');
@@ -46,6 +47,8 @@ test('caminhoVigiado não vale para o que a sessão escreve sozinha', () => {
     'frentes/minha-frente/sub/decisoes.md',
     'decisoes.md',
     'LEIA-ME.md.bak',
+    'decisoes-velhas/x.md',
+    '.githubx/x',
   ];
   for (const caminho of livres) assert.equal(caminhoVigiado(caminho), false, caminho);
 });
@@ -107,15 +110,17 @@ test('aviso com before zerado varre todos os commits', () => {
 test('aviso lê o conteúdo próprio de um merge', () => {
   const repo = novoRepo();
   commitar(repo, 'docs/base.md', 'base\n', 'base');
-  git(['checkout', '--quiet', '-b', 'lado'], { cwd: repo });
+  assert.equal(git(['checkout', '--quiet', '-b', 'lado'], { cwd: repo }).status, 0);
   commitar(repo, ENTRADA, 'lado\n', 'lado');
-  git(['checkout', '--quiet', 'main'], { cwd: repo });
+  assert.equal(git(['checkout', '--quiet', 'main'], { cwd: repo }).status, 0);
   const antes = commitar(repo, PASSAGEM, 'main\n', 'main');
   assert.equal(git(['merge', '--quiet', '--no-commit', '--no-ff', 'lado'], { cwd: repo }).status, 0);
   gravar(repo, DECISOES, 'so no merge\n');
   assert.equal(git(['add', '--', DECISOES], { cwd: repo }).status, 0);
   assert.equal(git(['commit', '--quiet', '--no-verify', '-m', 'merge'], { cwd: repo }).status, 0);
   const merge = git(['rev-parse', 'HEAD'], { cwd: repo }).stdout.toString('utf8').trim();
+  const pais = git(['rev-list', '--parents', '-n', '1', merge], { cwd: repo }).stdout.toString('utf8').trim().split(' ');
+  assert.equal(pais.length, 3);
   const { status, saida } = avisar(repo, antes, merge);
   assert.equal(status, 1, saida);
   assert.ok(saida.includes(DECISOES), saida);
@@ -138,4 +143,39 @@ test('aviso sai 2 quando não há commit novo com after real', () => {
   const repo = novoRepo();
   const base = commitar(repo, 'docs/base.md', 'base\n', 'base');
   assert.equal(avisar(repo, base, base).status, 2);
+});
+
+test('aviso conta o vigiado apagado', () => {
+  const repo = novoRepo();
+  const antes = commitar(repo, DECISOES, 'decidi\n', 'decisao');
+  assert.equal(git(['rm', '--quiet', '--', DECISOES], { cwd: repo }).status, 0);
+  assert.equal(git(['commit', '--quiet', '--no-verify', '-m', 'apaga'], { cwd: repo }).status, 0);
+  const depois = git(['rev-parse', 'HEAD'], { cwd: repo }).stdout.toString('utf8').trim();
+  const { status, saida } = avisar(repo, antes, depois);
+  assert.equal(status, 1, saida);
+  assert.ok(saida.includes(DECISOES), saida);
+});
+
+test('aviso conta o vigiado movido para fora', () => {
+  const repo = novoRepo();
+  const antes = commitar(repo, 'LEIA-ME.md', 'oi\n', 'leia-me');
+  mkdirSync(join(repo, 'docs'));
+  assert.equal(git(['mv', 'LEIA-ME.md', 'docs/leia.md'], { cwd: repo }).status, 0);
+  assert.equal(git(['commit', '--quiet', '--no-verify', '-m', 'move'], { cwd: repo }).status, 0);
+  const depois = git(['rev-parse', 'HEAD'], { cwd: repo }).stdout.toString('utf8').trim();
+  const { status, saida } = avisar(repo, antes, depois);
+  assert.equal(status, 1, saida);
+  assert.ok(saida.includes('LEIA-ME.md'), saida);
+});
+
+test('aviso não imprime o caminho de nome barrado', () => {
+  const repo = novoRepo();
+  const base = commitar(repo, 'docs/base.md', 'base\n', 'base');
+  const cpf = gerar.cpfValido();
+  const caminho = `decisoes/${cpf}.md`;
+  const ultimo = commitar(repo, caminho, 'x\n', 'nome com cpf');
+  const { status, saida } = avisar(repo, base, ultimo);
+  assert.equal(status, 1, saida);
+  assert.ok(saida.includes('(arquivo de nome barrado)'), saida);
+  assert.ok(!saida.includes(cpf), saida);
 });

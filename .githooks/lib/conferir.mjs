@@ -41,6 +41,11 @@ function padroesDoNome(caminho) {
   return [...new Set(padroes)];
 }
 
+/** O nome que a trava barra: quem imprime caminhos não o mostra. */
+export function nomeBarrado(caminho) {
+  return padroesDoNome(caminho).length > 0;
+}
+
 function achadosDeNome(caminhos) {
   return caminhos.flatMap((caminho) =>
     padroesDoNome(caminho).map((padrao) => ({ caminho, padrao, conteudo: false })),

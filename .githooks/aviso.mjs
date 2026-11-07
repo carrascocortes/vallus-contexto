@@ -1,6 +1,7 @@
 import { caminhosTocados, ehSoZeros } from './lib/git.mjs';
 import { commitsDoPush } from './lib/push.mjs';
 import { caminhoVigiado } from './lib/caminhos.mjs';
+import { nomeBarrado } from './lib/conferir.mjs';
 
 const LIMPO = 0;
 const TOCOU = 1;
@@ -17,7 +18,10 @@ function main() {
     let tocou = false;
     for (const commit of commits) {
       const vigiados = caminhosTocados(commit, cwd).filter(caminhoVigiado);
-      for (const caminho of vigiados) process.stdout.write(`aviso: ${commit} toca ${caminho}\n`);
+      for (const caminho of vigiados) {
+        const nome = nomeBarrado(caminho) ? '(arquivo de nome barrado)' : caminho;
+        process.stdout.write(`aviso: ${commit} toca ${nome}\n`);
+      }
       if (vigiados.length > 0) tocou = true;
     }
     return tocou ? TOCOU : LIMPO;

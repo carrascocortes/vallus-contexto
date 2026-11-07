@@ -42,11 +42,16 @@ function caminhosDoNameStatus(saida) {
   return caminhos;
 }
 
+// `--diff-merges=first-parent` faz o merge listar o que trouxe de próprio; sem ele não lista nada.
+function argumentosDoDiffTree(formato, ref) {
+  return ['diff-tree', '--no-commit-id', '--diff-merges=first-parent', '-r', formato, '-z', '--root', ref];
+}
+
 /** `ref` nulo é o índice do momento; senão, o commit dado. */
 export function arquivosMudados(ref, cwd) {
   const args = ref === null
     ? ['diff', '--cached', '--name-status', '-z', '--diff-filter=ACMRT']
-    : ['diff-tree', '--no-commit-id', '--diff-merges=first-parent', '-r', '--name-status', '-z', '--root', ref];
+    : argumentosDoDiffTree('--name-status', ref);
   return caminhosDoNameStatus(rodarGit(args, { cwd }).stdout);
 }
 
@@ -69,6 +74,5 @@ export function lerSeExiste(ref, caminho, cwd) {
 
 // Ao contrário de `arquivosMudados`, conta também o que o commit apagou: apagar um caminho vigiado é tocar nele.
 export function caminhosTocados(ref, cwd) {
-  const args = ['diff-tree', '--no-commit-id', '--diff-merges=first-parent', '-r', '--name-only', '-z', '--root', ref];
-  return separarPorNulo(rodarGit(args, { cwd }).stdout);
+  return separarPorNulo(rodarGit(argumentosDoDiffTree('--name-only', ref), { cwd }).stdout);
 }

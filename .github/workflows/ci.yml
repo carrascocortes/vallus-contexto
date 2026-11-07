@@ -15,6 +15,7 @@ defaults:
 jobs:
   trava:
     name: trava sobre cada commit do push
+    if: ${{ !github.event.deleted }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -40,11 +41,6 @@ jobs:
           sha256sum -c "${ASSET}.sha256"
           tar -xzf "$ASSET" gitleaks
 
-      - name: Testes
-        env:
-          VALLUS_GITLEAKS: ${{ runner.temp }}/gitleaks
-        run: node --test testes/*.test.mjs
-
       - name: Trava
         env:
           VALLUS_GITLEAKS: ${{ runner.temp }}/gitleaks
@@ -52,8 +48,14 @@ jobs:
           AFTER: ${{ github.sha }}
         run: node .githooks/trava.mjs --push "$BEFORE" "$AFTER"
 
+      - name: Testes
+        env:
+          VALLUS_GITLEAKS: ${{ runner.temp }}/gitleaks
+        run: node --test testes/*.test.mjs
+
   aviso:
     name: aviso dos caminhos vigiados
+    if: ${{ !github.event.deleted }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
