@@ -14,9 +14,7 @@ function caminhosVersionados(cwd) {
 }
 
 function contarLinhas(texto) {
-  return texto.split('
-').length - (texto.endsWith('
-') ? 1 : 0);
+  return texto.split('\n').length - (texto.endsWith('\n') ? 1 : 0);
 }
 
 function caminhosComAcento(caminhos) {
@@ -40,7 +38,7 @@ test('cada modelo respeita o teto', () => {
   const tetos = { 'frente.md': 60, 'passagem.md': 40, 'entrada.md': 40, 'decisao.md': 30, 'licao.md': 40, 'referencia.md': 40 };
   for (const [modelo, teto] of Object.entries(tetos)) {
     const texto = readFileSync(join(raiz, 'modelos', modelo), 'utf8');
-    const linhas = texto.split('\n').length - (texto.endsWith('\n') ? 1 : 0);
+    const linhas = contarLinhas(texto);
     assert.ok(linhas <= teto, `${modelo} tem ${linhas} linhas, teto ${teto}`);
   }
 });
@@ -61,10 +59,6 @@ test('o campo sessao dos modelos é o marcador <id>', () => {
     assert.ok(linhas.includes('sessao: <id>'), `${modelo} sem a linha exata "sessao: <id>"`);
   }
 });
-
-function contarLinhas(texto) {
-  return texto.split('\n').length - (texto.endsWith('\n') ? 1 : 0);
-}
 
 test('LEIA-ME tem no máximo 80 linhas', () => {
   const linhas = contarLinhas(readFileSync(join(raiz, 'LEIA-ME.md'), 'utf8'));
