@@ -55,3 +55,27 @@ test('o campo sessao dos modelos é o marcador <id>', () => {
     assert.ok(linhas.includes('sessao: <id>'), `${modelo} sem a linha exata "sessao: <id>"`);
   }
 });
+
+function contarLinhas(texto) {
+  return texto.split('\n').length - (texto.endsWith('\n') ? 1 : 0);
+}
+
+test('LEIA-ME tem no máximo 80 linhas', () => {
+  const linhas = contarLinhas(readFileSync(join(raiz, 'LEIA-ME.md'), 'utf8'));
+  assert.ok(linhas <= 80, `LEIA-ME.md tem ${linhas} linhas, teto 80`);
+});
+
+test('cada arquivo de frente respeita o teto do seu tipo', () => {
+  const caminhos = caminhosVersionados(raiz).filter((caminho) => caminho.startsWith('frentes/'));
+  assert.ok(caminhos.length > 0, 'nenhum arquivo de frente versionado');
+  for (const caminho of caminhos) {
+    const [, , primeiro, segundo] = caminho.split('/');
+    let teto;
+    if (segundo === undefined && primeiro === 'frente.md') teto = 60;
+    else if (segundo === undefined && primeiro === 'passagem.md') teto = 40;
+    else if (primeiro === 'memoria') teto = 40;
+    if (teto === undefined) continue;
+    const linhas = contarLinhas(readFileSync(join(raiz, caminho), 'utf8'));
+    assert.ok(linhas <= teto, `${caminho} tem ${linhas} linhas, teto ${teto}`);
+  }
+});
