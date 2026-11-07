@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-const TAMANHO_MAXIMO = 512 * 1024 * 1024;
+export const TAMANHO_MAXIMO = 512 * 1024 * 1024;
 const SO_ZEROS = /^0+$/;
 const OBJETO = /^[0-9a-f]{4,64}$/i;
 
@@ -46,7 +46,7 @@ function caminhosDoNameStatus(saida) {
 export function arquivosMudados(ref, cwd) {
   const args = ref === null
     ? ['diff', '--cached', '--name-status', '-z', '--diff-filter=ACMRT']
-    : ['diff-tree', '--no-commit-id', '-r', '--name-status', '-z', '--root', ref];
+    : ['diff-tree', '--no-commit-id', '--diff-merges=first-parent', '-r', '--name-status', '-z', '--root', ref];
   return caminhosDoNameStatus(rodarGit(args, { cwd }).stdout);
 }
 

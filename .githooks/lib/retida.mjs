@@ -150,6 +150,11 @@ function destinoLivre(raiz, slug, caminho, agora) {
   return candidato;
 }
 
+// path.relative ignora a caixa no Windows, onde a mesma pasta tem várias grafias.
+function mesmaPasta(a, b) {
+  return relative(resolve(a), resolve(b)) === '';
+}
+
 function estaDentro(pasta, caminho) {
   const relativo = relative(resolve(pasta), resolve(caminho));
   const saiDaPasta = relativo === '..' || relativo.startsWith(`..${sep}`) || isAbsolute(relativo);
@@ -162,7 +167,7 @@ export function reter({ raizClone, caminho, raizRetidas, padroes, agora, validar
   try {
     if (typeof validarEsboco !== 'function') throw new Error('a validação do esboço é obrigatória');
     if (!ehRetivel(caminho)) throw new Error('o caminho não é de entrada nem de passagem');
-    if (resolve(raizRetidas) === resolve(raizClone) || estaDentro(raizClone, raizRetidas)) {
+    if (mesmaPasta(raizRetidas, raizClone) || estaDentro(raizClone, raizRetidas)) {
       throw new Error('a pasta das retidas está dentro do clone');
     }
     const original = readFileSync(origem, 'utf8');

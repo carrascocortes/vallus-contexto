@@ -364,24 +364,190 @@ function hashDe(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+const EXCECOES = '.githooks/excecoes.txt';
+
+function anexarExcecao(repo, linha) {
+  appendFileSync(join(repo, EXCECOES), linha);
+}
+
 test('exceção por hash: o arquivo exato passa e o mesmo caminho com outro conteúdo é recusado', () => {
   const contexto = repoComTrava();
   const conteudo = `exemplo ${gerar.cpfValido()}\n`;
   gravar(contexto.repo, 'docs/exemplo.md', conteudo);
-  appendFileSync(join(contexto.repo, '.githooks', 'excecoes.txt'), `docs/exemplo.md\t${hashDe(Buffer.from(conteudo))}\texemplo documentado\n`);
-  adicionar(contexto.repo, 'docs/exemplo.md');
+  anexarExcecao(contexto.repo, `docs/exemplo.md\t${hashDe(Buffer.from(conteudo))}\texemplo documentado\n`);
+  adicionar(contexto.repo, EXCECOES, 'docs/exemplo.md');
   assert.equal(trava(contexto, ['--staged']).status, 0);
   gravar(contexto.repo, 'docs/exemplo.md', `exemplo ${gerar.cpfValido()}\n`);
   adicionar(contexto.repo, 'docs/exemplo.md');
   assert.equal(trava(contexto, ['--staged']).status, 1);
 });
 
+test('exceção só vale se o excecoes.txt estiver no índice, e não só no disco', () => {
+  const contexto = repoComTrava();
+  const conteudo = `exemplo ${gerar.cpfValido()}\n`;
+  gravar(contexto.repo, 'docs/exemplo.md', conteudo);
+  anexarExcecao(contexto.repo, `docs/exemplo.md\t${hashDe(Buffer.from(conteudo))}\texemplo documentado\n`);
+  adicionar(contexto.repo, 'docs/exemplo.md');
+  assert.equal(trava(contexto, ['--staged']).status, 1);
+});
+
+test('exceção do --commit vem do commit', () => {
+  const contexto = repoComTrava();
+  const conteudo = `exemplo ${gerar.cpfValido()}\n`;
+  gravar(contexto.repo, 'docs/exemplo.md', conteudo);
+  anexarExcecao(contexto.repo, `docs/exemplo.md\t${hashDe(Buffer.from(conteudo))}\texemplo documentado\n`);
+  adicionar(contexto.repo, EXCECOES, 'docs/exemplo.md');
+  assert.equal(trava(contexto, ['--commit', commitSemHook(contexto.repo)]).status, 0);
+});
+
+test('excecoes.txt com BOM UTF-8 é interpretado', () => {
+  const contexto = repoComTrava();
+  const conteudo = `exemplo ${gerar.cpfValido()}\n`;
+  const linha = `docs/exemplo.md\t${hashDe(Buffer.from(conteudo))}\texemplo documentado\n`;
+  writeFileSync(join(contexto.repo, EXCECOES), `${COM_BOM}# comentário\n${linha}`);
+  gravar(contexto.repo, 'docs/exemplo.md', conteudo);
+  adicionar(contexto.repo, EXCECOES, 'docs/exemplo.md');
+  assert.equal(trava(contexto, ['--staged']).status, 0);
+});
+
 test('linha malformada em excecoes.txt é erro, não exceção', () => {
   const contexto = repoComTrava();
-  appendFileSync(join(contexto.repo, '.githooks', 'excecoes.txt'), 'docs/exemplo.md\tsem-hash\n');
+  anexarExcecao(contexto.repo, 'docs/exemplo.md\tsem-hash\n');
   gravar(contexto.repo, 'docs/a.md', 'limpo\n');
-  adicionar(contexto.repo, 'docs/a.md');
+  adicionar(contexto.repo, EXCECOES, 'docs/a.md');
   assert.equal(trava(contexto, ['--staged']).status, 2);
+});
+
+const NOMES_COM_VALOR = {
+  CPF: () => gerar.cpfValido(),
+  'e-mail de fora': () => gerar.emailDeFora(),
+  UUID: () => gerar.uuid(),
+};
+
+for (const [nome, plantar] of Object.entries(NOMES_COM_VALOR)) {
+  test(`recusa ${nome} no nome do arquivo sem mostrar o valor`, () => {
+    const contexto = repoComTrava();
+    const valor = plantar();
+    gravar(contexto.repo, `docs/${valor}.md`, 'limpo\n');
+    adicionar(contexto.repo, `docs/${valor}.md`);
+    const { status, saida } = trava(contexto, ['--staged']);
+    assert.equal(status, 1, saida);
+    assert.ok(!saida.includes(valor), 'a saída repetiu o valor do nome');
+    assert.match(saida, /nome-com-/);
+    assert.match(saida, /git diff --cached --name-only/);
+    const commit = commitSemHook(contexto.repo);
+    const doCommit = trava(contexto, ['--commit', commit]);
+    assert.equal(doCommit.status, 1);
+    assert.ok(!doCommit.saida.includes(valor));
+    assert.match(doCommit.saida, new RegExp(`git show --name-only ${commit}`));
+  });
+}
+
+test('nome com valor e conteúdo com valor não mostram o nome e não retêm', () => {
+  const contexto = repoComTrava();
+  const cpfDoNome = gerar.cpfValido();
+  const caminho = `frentes/${cpfDoNome}/passagem.md`;
+  const original = passagemComEmail(gerar.emailDeFora());
+  gravar(contexto.repo, caminho, original);
+  adicionar(contexto.repo, caminho);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.ok(!saida.includes(cpfDoNome));
+  assert.equal(readFileSync(join(contexto.repo, caminho), 'utf8'), original);
+  assert.deepEqual(arquivosRetidos(contexto.retidas), []);
+});
+
+function repoComMergeSujo() {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  assert.equal(git(['checkout', '--quiet', '-b', 'lado'], { cwd: contexto.repo }).status, 0);
+  gravar(contexto.repo, 'docs/lado.md', 'limpo\n');
+  adicionar(contexto.repo, 'docs/lado.md');
+  commitSemHook(contexto.repo, 'lado');
+  assert.equal(git(['checkout', '--quiet', 'main'], { cwd: contexto.repo }).status, 0);
+  gravar(contexto.repo, 'docs/principal.md', 'limpo\n');
+  adicionar(contexto.repo, 'docs/principal.md');
+  commitSemHook(contexto.repo, 'principal');
+  const juncao = git(['merge', '--quiet', '--no-commit', '--no-ff', 'lado'], { cwd: contexto.repo });
+  assert.equal(juncao.status, 0, juncao.stderr);
+  const cpf = gerar.cpfValido();
+  gravar(contexto.repo, 'docs/so-no-merge.md', `cpf ${cpf}\n`);
+  adicionar(contexto.repo, 'docs/so-no-merge.md');
+  return { contexto, base, cpf, merge: commitSemHook(contexto.repo, 'merge') };
+}
+
+test('--commit confere o conteúdo próprio de um merge', () => {
+  const { contexto, merge, cpf } = repoComMergeSujo();
+  const { status, saida } = trava(contexto, ['--commit', merge]);
+  assert.equal(status, 1, saida);
+  assert.ok(!saida.includes(cpf));
+});
+
+test('--push confere o conteúdo próprio de um merge', () => {
+  const { contexto, base, merge, cpf } = repoComMergeSujo();
+  const { status, saida } = trava(contexto, ['--push', base, merge]);
+  assert.equal(status, 1, saida);
+  assert.ok(!saida.includes(cpf));
+});
+
+test('a retida só acontece quando o disco é o que está no índice', () => {
+  const contexto = repoComTrava();
+  const cpf = gerar.cpfValido();
+  gravar(contexto.repo, ENTRADA, [...cabecalhoDeEntrada(), `CPF do cliente: ${cpf}`, ''].join('\n'));
+  adicionar(contexto.repo, ENTRADA);
+  const alterado = [...cabecalhoDeEntrada(), 'texto novo, ainda sem git add', ''].join('\n');
+  gravar(contexto.repo, ENTRADA, alterado);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /git add -- frentes\/minha-frente\/memoria\/2026-11-05-turno\.md/);
+  assert.equal(readFileSync(join(contexto.repo, ENTRADA), 'utf8'), alterado);
+  assert.deepEqual(arquivosRetidos(contexto.retidas), []);
+});
+
+test('disco com CRLF e índice com LF ainda retém', () => {
+  const contexto = repoComTrava();
+  const original = entradaComCpf();
+  gravar(contexto.repo, ENTRADA, original);
+  adicionar(contexto.repo, ENTRADA);
+  gravar(contexto.repo, ENTRADA, original.replace(/\n/g, '\r\n'));
+  assert.equal(trava(contexto, ['--staged']).status, 1);
+  assert.equal(arquivosRetidos(contexto.retidas).length, 1);
+});
+
+test('a saída da retida não mostra o CPF nem o e-mail, e o esboço também não', () => {
+  const contexto = repoComTrava();
+  const cpf = gerar.cpfValido();
+  const email = gerar.emailDeFora();
+  gravar(contexto.repo, ENTRADA, [...cabecalhoDeEntrada(), `CPF do cliente: ${cpf}`, ''].join('\n'));
+  gravar(contexto.repo, PASSAGEM, passagemComEmail(email));
+  adicionar(contexto.repo, ENTRADA, PASSAGEM);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.equal(arquivosRetidos(contexto.retidas).length, 2);
+  for (const valor of [cpf, email]) {
+    assert.ok(!saida.includes(valor));
+    for (const caminho of [ENTRADA, PASSAGEM]) assert.ok(!readFileSync(join(contexto.repo, caminho), 'utf8').includes(valor));
+  }
+});
+
+test('--commit e --push não mostram o valor', () => {
+  const { contexto, base, primeiro } = repoComTresCommits();
+  const cpf = git(['show', `${primeiro}:docs/a.md`], { cwd: contexto.repo }).stdout.toString('utf8').replace('cpf ', '').trim();
+  for (const args of [['--commit', primeiro], ['--push', base, primeiro]]) {
+    const { status, saida } = trava(contexto, args);
+    assert.equal(status, 1, saida);
+    assert.ok(!saida.includes(cpf));
+  }
+});
+
+test('GITLEAKS_CONFIG em minúsculas também não chega ao gitleaks', () => {
+  const contexto = repoComTrava();
+  const configuracao = join(pastaTemporaria(), 'frouxa.toml');
+  writeFileSync(configuracao, "[allowlist]\nregexes = ['.*']\n");
+  gravar(contexto.repo, 'docs/a.md', `chave = ${gerar.chaveDatabricks()}\n`);
+  adicionar(contexto.repo, 'docs/a.md');
+  const { status, saida } = trava(contexto, ['--staged'], { gitleaks_config: configuracao, Gitleaks_Config_Toml: "[allowlist]\nregexes = ['.*']\n" });
+  assert.equal(status, 1, saida);
 });
 
 test('sem gitleaks a trava recusa com saída 2', () => {

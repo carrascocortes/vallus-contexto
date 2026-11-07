@@ -1,8 +1,7 @@
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { conferirCaminhos, conferirTexto } from './lib/conferir.mjs';
-import { lerExcecoes } from './lib/excecoes.mjs';
-import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto } from './lib/git.mjs';
+import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto, lerArquivo } from './lib/git.mjs';
 import { commitsDoPush } from './lib/push.mjs';
 import { ehRetivel, raizRetidasPadrao, reter } from './lib/retida.mjs';
 
@@ -10,41 +9,48 @@ const PASSA = 0;
 const BARROU = 1;
 const ERRO = 2;
 
-const pastaDaTrava = dirname(fileURLToPath(import.meta.url));
 const cwd = process.cwd();
 
 function avisar(mensagem) {
   process.stderr.write(`trava: ${mensagem}\n`);
 }
 
-function descrever({ caminho, linha, padrao }) {
-  return linha === undefined ? `${caminho}: ${padrao}` : `${caminho}:${linha}: ${padrao}`;
+// O caminho de nome barrado pode carregar o próprio valor: nunca é impresso.
+function descrever({ caminho, linha, padrao, nomeBarrado }) {
+  const onde = nomeBarrado ? '(arquivo de nome barrado)' : caminho;
+  return linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`;
 }
 
-function conferirIndice(excecoes) {
-  return conferirCaminhos({ ref: null, caminhos: arquivosMudados(null, cwd), cwd, excecoes });
+function comandoParaListarNomes(ref) {
+  if (ref === null) return 'git diff --cached --name-only';
+  if (ref === 'HEAD') return 'git ls-tree -r --name-only HEAD';
+  return `git show --name-only ${ref}`;
 }
 
-function conferirCommit(sha, excecoes) {
+function conferirIndice() {
+  return conferirCaminhos({ ref: null, caminhos: arquivosMudados(null, cwd), cwd });
+}
+
+function conferirCommit(sha) {
   const ref = exigirObjeto(sha);
-  return conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd, excecoes });
+  return conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd });
 }
 
-function conferirArvore(excecoes) {
-  return conferirCaminhos({ ref: 'HEAD', caminhos: arquivosDaArvore('HEAD', cwd), cwd, excecoes });
+function conferirArvore() {
+  return conferirCaminhos({ ref: 'HEAD', caminhos: arquivosDaArvore('HEAD', cwd), cwd });
 }
 
-function conferirPush(before, after, excecoes) {
+function conferirPush(before, after) {
   if (ehSoZeros(exigirObjeto(after))) return [];
   const commits = commitsDoPush(before, after, cwd);
   if (commits.length === 0) throw new Error('o push não traz commit para conferir');
-  return commits.flatMap((sha) => conferirCommit(sha, excecoes));
+  return commits.flatMap(conferirCommit);
 }
 
 function padroesPorCaminhoRetivel(achados) {
   const porCaminho = new Map();
-  for (const { caminho, padrao, conteudo } of achados) {
-    if (!conteudo || !ehRetivel(caminho)) continue;
+  for (const { caminho, padrao, conteudo, nomeBarrado } of achados) {
+    if (!conteudo || nomeBarrado || !ehRetivel(caminho)) continue;
     porCaminho.set(caminho, [...(porCaminho.get(caminho) ?? []), padrao]);
   }
   return porCaminho;
@@ -54,7 +60,22 @@ function esbocoSemAchados(texto) {
   return conferirTexto(texto).length === 0;
 }
 
+// A retida copia o disco; só é o texto barrado se o disco ainda tem o que está no índice (CRLF não conta).
+function discoIgualAoIndice(caminho) {
+  try {
+    const noDisco = readFileSync(join(cwd, caminho));
+    const noIndice = lerArquivo(null, caminho, cwd);
+    return noDisco.equals(noIndice) || Buffer.from(noDisco.toString('utf8').replace(/\r\n/g, '\n')).equals(noIndice);
+  } catch {
+    return false;
+  }
+}
+
 function reterCaminho(caminho, padroes) {
+  if (!discoIgualAoIndice(caminho)) {
+    avisar(`${caminho} difere do que está no índice e não foi retido. Rode git add -- ${caminho} e repita o commit.`);
+    return;
+  }
   try {
     reter({
       raizClone: cwd,
@@ -76,13 +97,17 @@ function reterOsRetiveis(achados) {
   for (const [caminho, padroes] of padroesPorCaminhoRetivel(achados)) reterCaminho(caminho, padroes);
 }
 
+function avisarDosNomes(achados) {
+  const referencias = new Set(achados.filter((achado) => achado.nomeBarrado).map((achado) => achado.ref));
+  for (const ref of referencias) avisar(`liste os nomes barrados com: ${comandoParaListarNomes(ref)}`);
+}
+
 function executar(argumentos) {
   const [modo, primeiro, segundo] = argumentos;
-  const excecoes = lerExcecoes(join(pastaDaTrava, 'excecoes.txt'));
-  if (modo === '--staged') return { achados: conferirIndice(excecoes), podeReter: true };
-  if (modo === '--commit') return { achados: conferirCommit(primeiro, excecoes), podeReter: false };
-  if (modo === '--push') return { achados: conferirPush(primeiro, segundo, excecoes), podeReter: false };
-  if (modo === '--arvore') return { achados: conferirArvore(excecoes), podeReter: false };
+  if (modo === '--staged') return { achados: conferirIndice(), podeReter: true };
+  if (modo === '--commit') return { achados: conferirCommit(primeiro), podeReter: false };
+  if (modo === '--push') return { achados: conferirPush(primeiro, segundo), podeReter: false };
+  if (modo === '--arvore') return { achados: conferirArvore(), podeReter: false };
   throw new Error('uso: trava.mjs --staged | --commit <sha> | --push <before> <after> | --arvore');
 }
 
@@ -91,6 +116,7 @@ function main() {
     const { achados, podeReter } = executar(process.argv.slice(2));
     if (achados.length === 0) return PASSA;
     for (const achado of achados) avisar(descrever(achado));
+    avisarDosNomes(achados);
     if (podeReter) reterOsRetiveis(achados);
     avisar(`barrado: ${achados.length} achado(s). O valor não é mostrado.`);
     return BARROU;

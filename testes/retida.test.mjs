@@ -334,3 +334,13 @@ test('reter na raiz padrão aplica a ACL, sem tocar a raiz real', NO_WINDOWS, ()
     assert.equal(entradasDaAcl(raizRetidas).entradas.length, 1);
   });
 });
+
+test('reter recusa raizRetidas igual ao clone em outra caixa de letras', NO_WINDOWS, () => {
+  const raizClone = clone({ [ENTRADA]: entradaOriginal() });
+  const original = readFileSync(join(raizClone, ENTRADA), 'utf8');
+  assert.throws(
+    () => reter({ raizClone, caminho: ENTRADA, raizRetidas: raizClone.toUpperCase(), padroes: ['cpf'], agora, validarEsboco: aceita }),
+    (erro) => erro.code === 'RETENCAO_FALHOU',
+  );
+  assert.equal(readFileSync(join(raizClone, ENTRADA), 'utf8'), original);
+});
