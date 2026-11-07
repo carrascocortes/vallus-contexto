@@ -144,7 +144,7 @@ function arquivosRetidos(retidas) {
     .map((entrada) => join(entrada.parentPath, entrada.name));
 }
 
-function cabeEmCommit(contexto) {
+function temCommit(contexto) {
   return git(['rev-parse', '--verify', '--quiet', 'HEAD'], { cwd: contexto.repo }).status === 0;
 }
 
@@ -225,7 +225,7 @@ test('retém entrada com CPF e deixa o esboço passar no commit seguinte', () =>
   adicionar(contexto.repo, ENTRADA);
   const recusado = commitar(contexto, []);
   assert.notEqual(recusado.status, 0, recusado.saida);
-  assert.equal(cabeEmCommit(contexto), false);
+  assert.equal(temCommit(contexto), false);
   const noLugar = readFileSync(join(contexto.repo, ENTRADA), 'utf8');
   assert.match(noLugar, /desfecho: retido/);
   assert.match(noLugar, /motivo: trava: cpf/);
@@ -237,7 +237,7 @@ test('retém entrada com CPF e deixa o esboço passar no commit seguinte', () =>
   adicionar(contexto.repo, ENTRADA);
   const aceito = commitar(contexto, ['--', ENTRADA]);
   assert.equal(aceito.status, 0, aceito.saida);
-  assert.equal(cabeEmCommit(contexto), true);
+  assert.equal(temCommit(contexto), true);
 });
 
 test('retém passagem com e-mail fora da lista', () => {
@@ -310,7 +310,7 @@ test('o hook roda no git commit e barra o valor', () => {
   const recusado = commitar(contexto, []);
   assert.notEqual(recusado.status, 0);
   assert.match(recusado.saida, /cpf/);
-  assert.equal(cabeEmCommit(contexto), false);
+  assert.equal(temCommit(contexto), false);
 });
 
 const COM_BOM = String.fromCharCode(0xfeff);
@@ -559,7 +559,7 @@ test('sem gitleaks a trava recusa com saída 2', () => {
   const ausente = join(pastaTemporaria(), 'nao-existe');
   assert.equal(trava(contexto, ['--staged'], { VALLUS_GITLEAKS: ausente }).status, 2);
   assert.notEqual(commitar(contexto, [], { VALLUS_GITLEAKS: ausente }).status, 0);
-  assert.equal(cabeEmCommit(contexto), false);
+  assert.equal(temCommit(contexto), false);
 });
 
 test('gitleaks com erro não retém', () => {
@@ -712,7 +712,7 @@ function mensagemComValor(nome, plantar) {
     const valor = plantar();
     const { status, saida } = commitar(contexto, ['--allow-empty', '-m', `nota ${valor}`]);
     assert.notEqual(status, 0, saida);
-    assert.equal(cabeEmCommit(contexto), false);
+    assert.equal(temCommit(contexto), false);
     assert.match(saida, /mensagem de commit: linha \d+: /);
     assert.ok(!saida.includes(valor), 'a saída repetiu o valor da mensagem');
   });

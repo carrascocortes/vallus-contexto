@@ -13,6 +13,12 @@ function caminhosVersionados(cwd) {
   return stdout.toString('utf8').split('\0').filter(Boolean);
 }
 
+function contarLinhas(texto) {
+  return texto.split('
+').length - (texto.endsWith('
+') ? 1 : 0);
+}
+
 function caminhosComAcento(caminhos) {
   return caminhos.filter((caminho) => !/^[\x20-\x7E]+$/.test(caminho));
 }
@@ -31,7 +37,7 @@ test('o teste de acento não é vazio', () => {
 });
 
 test('cada modelo respeita o teto', () => {
-  const tetos = { 'frente.md': 60, 'passagem.md': 40, 'entrada.md': 40, 'decisao.md': 30, 'licao.md': 40 };
+  const tetos = { 'frente.md': 60, 'passagem.md': 40, 'entrada.md': 40, 'decisao.md': 30, 'licao.md': 40, 'referencia.md': 40 };
   for (const [modelo, teto] of Object.entries(tetos)) {
     const texto = readFileSync(join(raiz, 'modelos', modelo), 'utf8');
     const linhas = texto.split('\n').length - (texto.endsWith('\n') ? 1 : 0);
