@@ -66,3 +66,9 @@ export function lerSeExiste(ref, caminho, cwd) {
   const existe = rodarGit(['cat-file', '-e', especificacao(ref, caminho)], { cwd, tolerarFalha: true }).status === 0;
   return existe ? lerArquivo(ref, caminho, cwd) : null;
 }
+
+// Ao contrário de `arquivosMudados`, conta também o que o commit apagou: apagar um caminho vigiado é tocar nele.
+export function caminhosTocados(ref, cwd) {
+  const args = ['diff-tree', '--no-commit-id', '--diff-merges=first-parent', '-r', '--name-only', '-z', '--root', ref];
+  return separarPorNulo(rodarGit(args, { cwd }).stdout);
+}

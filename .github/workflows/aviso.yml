@@ -1,7 +1,0 @@
-name: aviso
-on: push
-jobs:
-  provisorio:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "workflow provisório da F0; o job de aviso de verdade entra na F1"
