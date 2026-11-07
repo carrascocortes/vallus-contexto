@@ -40,6 +40,16 @@ test('não barra CNPJ com dígito errado', () => {
   assert.deepEqual(nomes('x ' + comUltimoDigitoErrado(gerar.cnpjValido())), []);
 });
 
+test('barra CNPJ alfanumérico com e sem pontuação', () => {
+  const cnpj = gerar.cnpjAlfanumericoValido();
+  assert.deepEqual(nomes('x ' + cnpj), ['cnpj']);
+  assert.deepEqual(nomes('x ' + comPontuacaoDeCnpj(cnpj)), ['cnpj']);
+});
+
+test('não barra CNPJ alfanumérico com dígito verificador errado', () => {
+  assert.deepEqual(nomes('x ' + comUltimoDigitoErrado(gerar.cnpjAlfanumericoValido())), []);
+});
+
 test('barra e-mail fora da lista', () => {
   assert.deepEqual(nomes('contato ' + gerar.emailDeFora()), ['email']);
 });
@@ -50,10 +60,17 @@ test('não barra e-mail permitido', () => {
     'alguem@verusgrc.com.br',
     'carrasco.cortes@gmail.com',
     'noreply@anthropic.com',
+    'no-reply@servico.exemplo.org',
     '123+nome@users.noreply.github.com',
     'git@github.com',
   ];
   for (const email of permitidos) assert.deepEqual(nomes(`autor ${email}`), [], email);
+});
+
+test('não barra pacote@versão', () => {
+  for (const referencia of ['next@16.4.2', '@sentry/nextjs@10.76.2', 'actions/checkout@v4.2.2']) {
+    assert.deepEqual(nomes(`dependência ${referencia}`), [], referencia);
+  }
 });
 
 test('barra cuid', () => {
@@ -65,7 +82,7 @@ test('não barra UUID', () => {
 });
 
 test('não barra SHA de 40 nem de 7 caracteres', () => {
-  const sha = 'a' + randomBytes(20).toString('hex').slice(1);
+  const sha = 'c' + randomBytes(20).toString('hex').slice(1);
   assert.equal(sha.length, 40);
   assert.deepEqual(nomes(`commit ${sha}`), []);
   assert.deepEqual(nomes(`commit ${sha.slice(0, 7)}`), []);
@@ -79,8 +96,9 @@ test('barra JWT', () => {
   assert.deepEqual(nomes('token ' + gerar.jwt()), ['jwt']);
 });
 
-test('barra conexão com senha', () => {
+test('barra conexão com senha, com e sem usuário', () => {
   assert.deepEqual(nomes('url ' + gerar.conexaoComSenha()), ['conexao-com-senha']);
+  assert.deepEqual(nomes('url ' + gerar.conexaoSemUsuario()), ['conexao-com-senha']);
 });
 
 test('não barra URL sem senha', () => {
@@ -88,8 +106,19 @@ test('não barra URL sem senha', () => {
 });
 
 test('barra chave de API de provedor', () => {
-  for (const gerador of [gerar.chaveGithub, gerar.chaveAnthropic, gerar.chaveGoogle]) {
-    assert.deepEqual(nomes('chave ' + gerador()), ['chave-api'], gerador.name);
+  const geradores = {
+    github: gerar.chaveGithub,
+    'github com prefixo gho': () => gerar.chaveGithub('o'),
+    'github granular': gerar.chaveGithubGranular,
+    anthropic: gerar.chaveAnthropic,
+    google: gerar.chaveGoogle,
+    supabase: gerar.chaveSupabase,
+    asaas: gerar.chaveAsaas,
+    resend: gerar.chaveResend,
+    kimi: gerar.chaveKimi,
+  };
+  for (const [provedor, gerador] of Object.entries(geradores)) {
+    assert.deepEqual(nomes('chave ' + gerador()), ['chave-api'], provedor);
   }
 });
 
@@ -107,4 +136,19 @@ test('informa a linha', () => {
   const achados = detectar(`a\nb\nx ${gerar.cpfValido()}\nd`);
   assert.equal(achados.length, 1);
   assert.equal(achados[0].linha, 3);
+});
+
+test('entrada hostil de 400 mil caracteres termina em menos de 2 s', () => {
+  const entradas = {
+    'só a': 'a'.repeat(400_000),
+    'base64 sem barra': randomBytes(300_000).toString('base64').replaceAll('/', 'A'),
+    'eyJ- repetido': 'eyJ-'.repeat(100_000),
+    'a. repetido': 'a.'.repeat(200_000),
+  };
+  for (const [nome, texto] of Object.entries(entradas)) {
+    const inicio = performance.now();
+    detectar(texto);
+    const duracao = performance.now() - inicio;
+    assert.ok(duracao < 2000, `${nome} levou ${Math.round(duracao)} ms`);
+  }
 });
