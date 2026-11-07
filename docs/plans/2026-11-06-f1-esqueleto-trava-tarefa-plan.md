@@ -8,8 +8,9 @@ o CI com a segunda rede e o aviso, e a tarefa agendada que empurra o main de hor
 
 **Arquitetura:** a trava e a tarefa são scripts Node sem dependência externa. A trava mora em `.githooks/` e é a
 mesma no pre-commit e no CI: o pre-commit a roda sobre o que vai ser commitado, e o CI a roda sobre cada commit do push.
-A tarefa mora fora do clone, no perfil do PO, e não importa nada do clone: o código que ela roda não pode ser o que um
-agente acabou de editar. O código-fonte dela fica versionado em `ferramentas/tarefa/`, e a instalação copia.
+A tarefa mora fora do clone, no perfil do PO: o código que ela roda não pode ser o que um agente acabou de editar. Antes
+de empurrar, ela roda a trava extraída de `.githooks/` do último commit que já está no GitHub, nunca a do disco. O
+código-fonte dela fica versionado em `ferramentas/tarefa/`, e a instalação copia.
 
 **Tecnologia:** Node 24 na máquina do PO e o Node do runner `ubuntu-latest` no CI (só ESM, `node:test`,
 `node:child_process`, `node:fs`, `node:crypto`; nada de npm); `gitleaks` 8.30.1 pinado por SHA-256; Git for Windows
@@ -26,8 +27,8 @@ e este plano.
   `%USERPROFILE%\.vallus-contexto\bin\gitleaks.exe`, com o SHA-256 pinado em `ferramentas/gitleaks-8.30.1.sha256`.
   Sem o binário, a trava recusa todo commit. O download é do coordenador, com o ok do PO.
 - **D-F1-3. O aviso da tarefa ao PO é uma notificação do Windows**, mais uma linha no log
-  `%USERPROFILE%\.vallus-contexto\tarefa.log`. Cada situação avisa uma vez; um commit retido volta a avisar uma vez
-  por dia enquanto estiver retido. Uma prova real com o PO vendo a notificação entra nas Tarefas 10 e 11. O aviso de
+  `%USERPROFILE%\.vallus-contexto\empurrar.log`. Cada situação avisa uma vez por dia enquanto durar (DF-11, que
+  substitui a primeira versão, em que só o commit retido reavisava). Uma prova real com o PO vendo a notificação entra nas Tarefas 10 e 11. O aviso de
   CI é o e-mail de falha de workflow que o GitHub manda a quem empurrou, que é o PO (o push pela chave aparece no nome
   dele).
 - **D-F1-4. Modelos em `modelos/`**, uma pasta que a seção 4.1 não tem. O `LEIA-ME` aponta para eles em vez de
@@ -474,17 +475,22 @@ e este plano.
     Administradores; se a pasta já existir, conferir a mesma coisa e corrigir antes de seguir;
   - copiar `ferramentas/tarefa/*` para `%USERPROFILE%\.vallus-contexto\tarefa\` e conferir a ACL herdada;
   - entregar ao PO os comandos prontos dos passos seguintes.
-- [ ] **PO: registrar a tarefa** no PowerShell, com o `--%` (sem ele, o PowerShell quebra as aspas e o `%USERPROFILE%`):
-  `schtasks --% /Create /TN "vallus-contexto push" /SC HOURLY /TR "wscript.exe
-  \"%USERPROFILE%\.vallus-contexto\tarefa\empurrar.vbs\"" /F`. Conferir com
-  `schtasks /Query /TN "vallus-contexto push" /V /FO LIST` que o comando tem o caminho absoluto do `.vbs`.
-- [ ] **PO: revisar a branch `f1` e avançar o main** (`git merge --ff-only f1`). Disparar a tarefa
-  (`schtasks /Run /TN "vallus-contexto push"`). Esperado: ela empurra os commits anteriores ao primeiro em
-  `.githooks/` (o do plano e o da Tarefa 1), retém a partir dele, e o PO vê a notificação na tela e na central de
-  notificações; o log tem a linha da retenção. É a prova real do canal de aviso.
-- [ ] **PO: empurrar o resto com o próprio login** (`git -C C:\dev\vallus-contexto push origin main`). Esse push roda o
-  CI novo: o job `aviso` falha listando `LEIA-ME.md`, `.githooks/`, `.gitattributes`, `.github/` e `ferramentas/`
-  (aceite da QC12), e o job `trava` passa. Disparar a tarefa de novo: o log diz `nada`.
+- [ ] **PO: revisar a branch `f1`, avançar o main e empurrar com o próprio login** (`git merge --ff-only f1` e
+  `git -C C:\dev\vallus-contexto push origin main`). O primeiro push da F1 é do PO: a tarefa só roda a trava que já está
+  no GitHub (`.githooks/` da árvore do remoto), e o remoto, em `1380f97`, ainda não tem trava. Esse push roda o CI novo
+  sobre `1380f97..main`: o job `trava` passa e o job `aviso` falha listando `LEIA-ME.md`, `.githooks/`,
+  `.gitattributes`, `.github/`, `ferramentas/`, `decisoes/`, `memoria/` e o `decisoes.md` da frente (aceite da QC12).
+- [ ] **PO: registrar a tarefa** no Windows PowerShell, com as condições de energia que o `schtasks /Create` não
+  oferece (o padrão do Agendador não inicia a tarefa na bateria):
+  `$acao = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $env:USERPROFILE + '\.vallus-contexto\tarefa\empurrar.vbs"')`;
+  `$gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours 1)`;
+  `$config = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30)`;
+  `Register-ScheduledTask -TaskName 'vallus-contexto push' -Action $acao -Trigger $gatilho -Settings $config`.
+  Conferir com `Get-ScheduledTask 'vallus-contexto push'`: o argumento tem o caminho absoluto do `.vbs`,
+  `DisallowStartIfOnBatteries` e `StopIfGoingOnBatteries` são `False`, `StartWhenAvailable` é `True`, a repetição é de
+  uma hora sem fim.
+- [ ] **PO: disparar a tarefa** (`Start-ScheduledTask 'vallus-contexto push'`): o log diz `nada`. A prova de que ela
+  empurra, retém e avisa na tela fica para o descartável da Tarefa 11.
 
 ### Tarefa 11: Aceites no GitHub e registro na spec
 
@@ -499,11 +505,18 @@ valor plantado para o main.
     o primeiro com o conteúdo do main e um CPF plantado (`--no-verify`), o segundo apagando o CPF → o job `trava`
     falha no passo da trava (o roteiro registra em qual passo, para provar que não foi o `node --test`). O mesmo push
     prova os dois aceites: `before` zerado com só o primeiro plantado, e plantar e apagar no mesmo push.
-  - Disparo de teste da tarefa (`empurrar.mjs --clone <teste> --url <descartável> --chave <descartavel_key>`): um
-    commit com chave de API plantada por `--no-verify` → `trava` falha.
-  - Canal de aviso real, no clone de teste: com `core.hooksPath` errado, o disparo de teste dá `parar` e o PO confirma
-    a notificação; com o descartável avançado por outro clone, o disparo dá `parar` por histórico divergente e o PO
-    confirma a notificação.
+  - Disparo de teste da tarefa, sempre com todas as opções e estado e log do roteiro: `node
+    %USERPROFILE%\.vallus-contexto\tarefa\rodar.mjs --clone <teste> --url <descartável> --chave <descartavel_key>
+    --estado <pasta do roteiro>\estado --log <pasta do roteiro>\log`.
+    - Um commit limpo e, depois, um commit em `.github/` → empurra o limpo, retém o de `.github/`, e o PO confirma a
+      notificação (a prova de empurrar e reter, que saiu da Tarefa 10).
+    - Um commit com chave de API plantada por `--no-verify` → a tarefa não empurra, o motivo é `a trava recusou o
+      intervalo`, e o PO confirma a notificação. Depois o PO empurra esse commit com o próprio login para o
+      descartável, e o job `trava` falha (a spec admite o push de teste "ou o PO"; a trava da tarefa recusa o
+      plantado por construção).
+  - Canal de aviso real, no clone de teste: com `core.hooksPath` errado → `parar`; com o descartável avançado por outro
+    clone com um commit diferente do local → `parar` por histórico divergente; com o descartável só à frente do local →
+    `o GitHub está à frente do main local`. O PO confirma cada notificação.
 - [ ] **Aviso no main, com conteúdo real da frente.** Antes de cada caso, o roteiro desliga a tarefa
   (`schtasks /Change /TN "vallus-contexto push" /DISABLE`), o coordenador faz os commits, o roteiro confere a contagem
   com `git rev-list --count origin/main..main`, o PO dispara a tarefa uma vez pelo roteiro e a religa; o PO copia a URL
