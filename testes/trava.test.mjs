@@ -52,7 +52,7 @@ test('o gitleaks real está disponível', () => {
 function repoComTrava({ comHook = false } = {}) {
   const repo = repoTemporario();
   cpSync(join(raiz, '.githooks'), join(repo, '.githooks'), { recursive: true });
-  chmodSync(join(repo, '.githooks', 'pre-commit'), 0o755);
+  for (const gancho of ['pre-commit', 'commit-msg']) chmodSync(join(repo, '.githooks', gancho), 0o755);
   if (comHook) git(['config', 'core.hooksPath', '.githooks'], { cwd: repo });
   return { repo, retidas: join(pastaTemporaria(), 'retidas') };
 }
@@ -702,4 +702,80 @@ test('modo desconhecido é erro', () => {
   const contexto = repoComTrava();
   assert.equal(trava(contexto, ['--nada']).status, 2);
   assert.equal(trava(contexto, []).status, 2);
+});
+
+function mensagemComValor(nome, plantar) {
+  test(`o hook commit-msg recusa ${nome} na mensagem sem mostrar o valor`, () => {
+    const contexto = repoComTrava({ comHook: true });
+    const valor = plantar();
+    const { status, saida } = commitar(contexto, ['--allow-empty', '-m', `nota ${valor}`]);
+    assert.notEqual(status, 0, saida);
+    assert.equal(cabeEmCommit(contexto), false);
+    assert.match(saida, /mensagem de commit: linha \d+: /);
+    assert.ok(!saida.includes(valor), 'a saída repetiu o valor da mensagem');
+  });
+}
+
+mensagemComValor('CPF', () => gerar.cpfValido());
+mensagemComValor('UUID', () => gerar.uuid());
+mensagemComValor('valor que só o gitleaks barra', () => `chave = ${gerar.chaveDatabricks()}`);
+
+test('o hook commit-msg aceita mensagem limpa, também com linha de comentário', () => {
+  const contexto = repoComTrava({ comHook: true });
+  const { status, saida } = commitar(contexto, ['--allow-empty', '-m', '# titulo\n\ntexto limpo']);
+  assert.equal(status, 0, saida);
+});
+
+test('--mensagem lê o arquivo e recusa arquivo ausente', () => {
+  const contexto = repoComTrava();
+  const arquivo = join(pastaTemporaria(), 'msg.txt');
+  const cpf = gerar.cpfValido();
+  writeFileSync(arquivo, `texto\n# cpf ${cpf}\n`);
+  const { status, saida } = trava(contexto, ['--mensagem', arquivo]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /mensagem de commit: linha 2: cpf/);
+  assert.ok(!saida.includes(cpf));
+  assert.equal(trava(contexto, ['--mensagem', join(pastaTemporaria(), 'nao-existe.txt')]).status, 2);
+});
+
+test('--commit confere a mensagem de um commit feito com --no-verify', () => {
+  const contexto = repoComTrava();
+  const cpf = gerar.cpfValido();
+  const { status, saida } = trava(contexto, ['--commit', commitSemHook(contexto.repo, `nota ${cpf}`)]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /mensagem de commit: linha 1: cpf/);
+  assert.ok(!saida.includes(cpf));
+});
+
+test('--push recusa o intervalo em que só a mensagem de um commit tem o valor', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  commitSemHook(contexto.repo, 'limpo');
+  const cpf = gerar.cpfValido();
+  commitSemHook(contexto.repo, `nota ${cpf}`);
+  const ultimo = commitSemHook(contexto.repo, 'limpo de novo');
+  const { status, saida } = trava(contexto, ['--push', base, ultimo]);
+  assert.equal(status, 1, saida);
+  assert.ok(!saida.includes(cpf));
+});
+
+test('nome de arquivo com valor que só o gitleaks barra é escondido', () => {
+  const contexto = repoComTrava();
+  const chave = gerar.chaveDeAcesso();
+  gravar(contexto.repo, `docs/${chave}.md`, 'limpo\n');
+  adicionar(contexto.repo, `docs/${chave}.md`);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.ok(!saida.includes(chave));
+  assert.match(saida, /\(arquivo de nome barrado\): nome-com-gitleaks/);
+});
+
+test('gitlink de nome barrado dá 2 e não repete o nome na saída', () => {
+  const contexto = repoComTrava();
+  const cpf = gerar.cpfValido();
+  const registro = git(['update-index', '--add', '--cacheinfo', `160000,${'a'.repeat(40)},docs/${cpf}`], { cwd: contexto.repo });
+  assert.equal(registro.status, 0, registro.stderr);
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 2, saida);
+  assert.ok(!saida.includes(cpf), 'a saída repetiu o nome barrado');
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { conferirCaminhos, conferirTexto } from './lib/conferir.mjs';
-import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto, lerArquivo } from './lib/git.mjs';
+import { conferirCaminhos, conferirMensagem, conferirTexto } from './lib/conferir.mjs';
+import { arquivosDaArvore, arquivosMudados, ehSoZeros, exigirObjeto, lerArquivo, mensagemDoCommit } from './lib/git.mjs';
 import { commitsDoPush } from './lib/push.mjs';
 import { ehRetivel, raizRetidasPadrao, reter } from './lib/retida.mjs';
 
@@ -16,7 +16,8 @@ function avisar(mensagem) {
 }
 
 // O caminho de nome barrado pode carregar o próprio valor: nunca é impresso.
-function descrever({ caminho, linha, padrao, nomeBarrado }) {
+function descrever({ caminho, linha, padrao, nomeBarrado, mensagem }) {
+  if (mensagem) return `mensagem de commit: linha ${linha}: ${padrao}`;
   const onde = nomeBarrado ? '(arquivo de nome barrado)' : caminho;
   return linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`;
 }
@@ -33,7 +34,14 @@ function conferirIndice() {
 
 function conferirCommit(sha) {
   const ref = exigirObjeto(sha);
-  return conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd });
+  const daMensagem = conferirMensagem(mensagemDoCommit(ref, cwd), ref);
+  return [...daMensagem, ...conferirCaminhos({ ref, caminhos: arquivosMudados(ref, cwd), cwd })];
+}
+
+// O Git passa ao commit-msg o arquivo com a mensagem inteira, inclusive as linhas de comentário que `-m` mantém.
+function conferirArquivoDeMensagem(arquivo) {
+  if (!arquivo) throw new Error('falta o arquivo da mensagem');
+  return conferirMensagem(readFileSync(arquivo, 'utf8'));
 }
 
 function conferirArvore() {
@@ -108,7 +116,8 @@ function executar(argumentos) {
   if (modo === '--commit') return { achados: conferirCommit(primeiro), podeReter: false };
   if (modo === '--push') return { achados: conferirPush(primeiro, segundo), podeReter: false };
   if (modo === '--arvore') return { achados: conferirArvore(), podeReter: false };
-  throw new Error('uso: trava.mjs --staged | --commit <sha> | --push <before> <after> | --arvore');
+  if (modo === '--mensagem') return { achados: conferirArquivoDeMensagem(primeiro), podeReter: false };
+  throw new Error('uso: trava.mjs --staged | --commit <sha> | --push <before> <after> | --arvore | --mensagem <arquivo>');
 }
 
 function main() {

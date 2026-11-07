@@ -76,3 +76,7 @@ export function lerSeExiste(ref, caminho, cwd) {
 export function caminhosTocados(ref, cwd) {
   return separarPorNulo(rodarGit(argumentosDoDiffTree('--name-only', ref), { cwd }).stdout);
 }
+
+export function mensagemDoCommit(ref, cwd) {
+  return rodarGit(['log', '-1', '--format=%B', exigirObjeto(ref), '--'], { cwd }).stdout.toString('utf8');
+}
