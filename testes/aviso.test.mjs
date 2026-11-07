@@ -72,8 +72,12 @@ function novoRepo() {
   return repo;
 }
 
-function avisar(repo, before, depois) {
-  const resultado = spawnSync(process.execPath, [aviso, before, depois], { cwd: repo, encoding: 'utf8' });
+function avisar(repo, before, depois, ambiente = {}) {
+  const resultado = spawnSync(process.execPath, [aviso, before, depois], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, ...ambiente },
+  });
   return { status: resultado.status, saida: `${resultado.stdout}${resultado.stderr}` };
 }
 
@@ -178,4 +182,14 @@ test('aviso não imprime o caminho de nome barrado', () => {
   assert.equal(status, 1, saida);
   assert.ok(saida.includes('(arquivo de nome barrado)'), saida);
   assert.ok(!saida.includes(cpf), saida);
+});
+
+test('aviso sai 2 quando o gitleaks não está onde VALLUS_GITLEAKS aponta', () => {
+  const repo = novoRepo();
+  const base = commitar(repo, 'docs/base.md', 'base\n', 'base');
+  const ultimo = commitar(repo, DECISOES, 'decidi\n', 'decisao');
+  const ausente = join(repo, 'nao-existe', 'gitleaks');
+  const { status, saida } = avisar(repo, base, ultimo, { VALLUS_GITLEAKS: ausente });
+  assert.equal(status, 2, saida);
+  assert.ok(!saida.includes(DECISOES), saida);
 });
