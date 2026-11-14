@@ -302,8 +302,8 @@ function lerChavesDoDia(arquivo, dia) {
 
 function lerUltimoOk(arquivo) {
   try {
-    const { ultimoOk } = JSON.parse(readFileSync(arquivo, 'utf8'));
-    return typeof ultimoOk === 'string' ? ultimoOk : null;
+    const lido = JSON.parse(readFileSync(arquivo, 'utf8'));
+    return typeof lido?.ultimoOk === 'string' ? lido.ultimoOk : null;
   } catch (erro) {
     if (erro.code === 'ENOENT' || erro instanceof SyntaxError) return null;
     throw erro;

@@ -716,15 +716,17 @@ test('ciclo parado depois avança ultimoCiclo e mantém ultimoOk', () => {
   });
 });
 
-test('batimento com JSON inválido não lança e vira ultimoOk nulo no ciclo parado', () => {
-  const c = cenario({ hooksPath: 'outro' });
-  mkdirSync(dirname(batimentoDe(c)), { recursive: true });
-  writeFileSync(batimentoDe(c), 'isto não é json');
-  commitar(c.clone, 'docs/a.md');
-  const agora = new Date('2026-11-07T10:00:00Z');
-  assert.doesNotThrow(() => c.rodar({ agora }));
-  assert.deepEqual(JSON.parse(readFileSync(batimentoDe(c), 'utf8')), { ultimoCiclo: agora.toISOString(), ultimoOk: null });
-});
+for (const [nome, conteudo] of [['JSON inválido', 'isto não é json'], ['o JSON null', 'null']]) {
+  test(`batimento com ${nome} não lança e vira ultimoOk nulo no ciclo parado`, () => {
+    const c = cenario({ hooksPath: 'outro' });
+    mkdirSync(dirname(batimentoDe(c)), { recursive: true });
+    writeFileSync(batimentoDe(c), conteudo);
+    commitar(c.clone, 'docs/a.md');
+    const agora = new Date('2026-11-07T10:00:00Z');
+    assert.doesNotThrow(() => c.rodar({ agora }));
+    assert.deepEqual(JSON.parse(readFileSync(batimentoDe(c), 'utf8')), { ultimoCiclo: agora.toISOString(), ultimoOk: null });
+  });
+}
 
 test('opção inválida não cria o arquivo de batimento', () => {
   const c = cenario();
