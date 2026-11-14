@@ -225,7 +225,7 @@ test('depois que o remoto avança até o retido, volta a empurrar o resto', () =
   c.rodar();
   assert.equal(c.remotoMain(), d);
   assert.equal(c.avisos.length, 1);
-  assert.equal(c.estadoGravado(), 'ok');
+  assert.match(c.estadoGravado(), /^retido\|\S+$/);
 });
 
 test('remoto vazio com commit em .github retém a partir dele', () => {
@@ -246,15 +246,18 @@ test('não empurra com core.hooksPath errado e avisa', () => {
   assert.match(c.estadoGravado(), /^parar\|hook desligado\|/);
 });
 
-test('hook desligado, consertado e desligado de novo avisa duas vezes', () => {
+test('hook desligado, consertado e desligado de novo avisa uma vez no dia e outra no dia seguinte', () => {
   const c = cenario({ hooksPath: 'outro' });
+  const hoje = new Date(2026, 10, 7, 12);
   commitar(c.clone, 'docs/a.md');
-  c.rodar();
+  c.rodar({ agora: hoje });
   git(['config', 'core.hooksPath', '.githooks'], { cwd: c.clone });
-  c.rodar();
+  c.rodar({ agora: hoje });
   git(['config', 'core.hooksPath', 'outro'], { cwd: c.clone });
   commitar(c.clone, 'docs/b.md');
-  c.rodar();
+  c.rodar({ agora: hoje });
+  assert.equal(c.avisos.length, 1);
+  c.rodar({ agora: new Date(2026, 10, 8, 12) });
   assert.equal(c.avisos.length, 2);
 });
 
@@ -301,15 +304,46 @@ test('push recusado por um hook pre-receive no remoto avisa e grava falha-push',
   assert.match(c.estadoGravado(), /^falha-push\|/);
 });
 
-test('GitHub inacessível, depois ok, depois inacessível de novo avisa duas vezes', () => {
+test('GitHub inacessível, depois ok, depois inacessível de novo avisa uma vez no dia e outra no dia seguinte', () => {
   const c = cenario();
   const queda = join(pastaTemporaria(), 'nao-existe.git');
+  const hoje = new Date(2026, 10, 7, 12);
   commitar(c.clone, 'docs/a.md');
-  c.rodar({ url: queda });
-  c.rodar();
+  c.rodar({ url: queda, agora: hoje });
+  c.rodar({ agora: hoje });
   commitar(c.clone, 'docs/b.md');
-  c.rodar({ url: queda });
+  c.rodar({ url: queda, agora: hoje });
+  assert.equal(c.avisos.length, 1);
+  c.rodar({ url: queda, agora: new Date(2026, 10, 8, 12) });
   assert.equal(c.avisos.length, 2);
+});
+
+test('situação A, depois B, depois A de novo no mesmo dia avisa A e B, só', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  const queda = join(pastaTemporaria(), 'nao-existe.git');
+  const hoje = new Date(2026, 10, 7, 12);
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ agora: hoje });
+  git(['config', 'core.hooksPath', '.githooks'], { cwd: c.clone });
+  c.rodar({ url: queda, agora: hoje });
+  git(['config', 'core.hooksPath', 'outro'], { cwd: c.clone });
+  c.rodar({ agora: hoje });
+  assert.deepEqual(c.avisos.map((aviso) => aviso.titulo), ['Backup do contexto parado', 'Backup do contexto parado']);
+  assert.match(c.avisos[0].texto, /hook desligado/);
+  assert.match(c.avisos[1].texto, /GitHub inacessível/);
+  assert.equal(c.estadoGravado().split('\n').length, 2);
+});
+
+test('o arquivo de estado do dia seguinte não guarda as chaves do dia anterior', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ agora: new Date(2026, 10, 7, 12) });
+  assert.match(c.estadoGravado(), /\|2026-11-07$/);
+  c.rodar({ agora: new Date(2026, 10, 8, 12) });
+  assert.match(c.estadoGravado(), /^parar\|hook desligado\|2026-11-08$/);
+  git(['config', 'core.hooksPath', '.githooks'], { cwd: c.clone });
+  c.rodar({ agora: new Date(2026, 10, 9, 12) });
+  assert.equal(c.estadoGravado(), '');
 });
 
 test('HEAD numa branch de trabalho: empurra o main, não o HEAD', () => {
@@ -654,4 +688,47 @@ test('push recusado duas vezes no mesmo dia, com alvos diferentes e o mesmo moti
 test('o rodar.mjs dá prazo ao aviso do Windows', () => {
   const rodar = readFileSync(join(raiz, 'ferramentas', 'tarefa', 'rodar.mjs'), 'utf8');
   assert.match(rodar, /timeout: 60_000/);
+});
+
+// --- batimento: a hora do último ciclo ---
+
+const batimentoDe = (c) => join(dirname(c.estado), 'ultimo-ciclo.json');
+
+test('ciclo ok grava o batimento com ultimoCiclo e ultimoOk iguais a agora', () => {
+  const c = cenario();
+  const agora = new Date('2026-11-07T10:00:00Z');
+  c.rodar({ agora });
+  const iso = agora.toISOString();
+  assert.equal(readFileSync(batimentoDe(c), 'utf8'), `{"ultimoCiclo":"${iso}","ultimoOk":"${iso}"}\n`);
+});
+
+test('ciclo parado depois avança ultimoCiclo e mantém ultimoOk', () => {
+  const c = cenario();
+  const primeiro = new Date('2026-11-07T10:00:00Z');
+  const segundo = new Date('2026-11-07T11:00:00Z');
+  c.rodar({ agora: primeiro });
+  git(['config', 'core.hooksPath', 'outro'], { cwd: c.clone });
+  commitar(c.clone, 'docs/a.md');
+  c.rodar({ agora: segundo });
+  assert.deepEqual(JSON.parse(readFileSync(batimentoDe(c), 'utf8')), {
+    ultimoCiclo: segundo.toISOString(),
+    ultimoOk: primeiro.toISOString(),
+  });
+});
+
+test('batimento com JSON inválido não lança e vira ultimoOk nulo no ciclo parado', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  mkdirSync(dirname(batimentoDe(c)), { recursive: true });
+  writeFileSync(batimentoDe(c), 'isto não é json');
+  commitar(c.clone, 'docs/a.md');
+  const agora = new Date('2026-11-07T10:00:00Z');
+  assert.doesNotThrow(() => c.rodar({ agora }));
+  assert.deepEqual(JSON.parse(readFileSync(batimentoDe(c), 'utf8')), { ultimoCiclo: agora.toISOString(), ultimoOk: null });
+});
+
+test('opção inválida não cria o arquivo de batimento', () => {
+  const c = cenario();
+  const argv = ['--clone', c.clone, '--estado', c.estado, '--log', c.log, '--desconhecida', 'x'];
+  assert.equal(main(argv, { avisar: () => 0 }), 2);
+  assert.equal(existsSync(batimentoDe(c)), false);
 });

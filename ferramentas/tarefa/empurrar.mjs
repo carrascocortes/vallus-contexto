@@ -289,12 +289,23 @@ function textoDoAviso(chave) {
   return { titulo: 'Push do backup falhou', texto: detalhe };
 }
 
-function lerChaveAnterior(arquivo) {
+// Uma chave por linha; só vale a do dia de hoje (toda chave que não é `ok` termina em `|<dia>`).
+function lerChavesDoDia(arquivo, dia) {
   try {
-    return readFileSync(arquivo, 'utf8').trim();
+    const linhas = readFileSync(arquivo, 'utf8').split('\n').map((linha) => linha.trim());
+    return new Set(linhas.filter((linha) => linha.endsWith(`|${dia}`)));
   } catch (erro) {
-    if (erro.code === 'ENOENT') return '';
+    if (erro.code === 'ENOENT') return new Set();
     throw erro;
+  }
+}
+
+function lerUltimoOk(arquivo) {
+  try {
+    const { ultimoOk } = JSON.parse(readFileSync(arquivo, 'utf8'));
+    return typeof ultimoOk === 'string' ? ultimoOk : null;
+  } catch {
+    return null;
   }
 }
 
@@ -331,16 +342,26 @@ function diaLocal(data) {
 }
 
 function registrar(opcoes, { avisar, agora, chave, descricao }) {
-  const precisaAvisar = chave !== 'ok' && chave !== lerChaveAnterior(opcoes.estado);
+  const chaves = lerChavesDoDia(opcoes.estado, diaLocal(agora));
+  const precisaAvisar = chave !== 'ok' && !chaves.has(chave);
   let canalFalhou = false;
   if (precisaAvisar) {
     const { titulo, texto } = textoDoAviso(chave);
     canalFalhou = avisar(titulo, texto) !== 0;
+    // Sem o aviso entregue a chave não entra, e o ciclo seguinte tenta de novo.
+    if (!canalFalhou) chaves.add(chave);
   }
-  // Sem o aviso entregue a chave não é gravada, e o ciclo seguinte tenta de novo.
-  if (!canalFalhou) gravar(opcoes.estado, `${chave}\n`);
+  gravar(opcoes.estado, [...chaves].map((linha) => `${linha}\n`).join(''));
   const linhaDoCanal = canalFalhou ? `${agora.toISOString()} falha do canal de aviso\n` : '';
   gravar(opcoes.log, `${agora.toISOString()} ${descricao}\n${linhaDoCanal}`, { anexar: true });
+  gravarBatimento(opcoes, { agora, ok: chave === 'ok' });
+}
+
+// A hora do último ciclo e do último ok, para o escritório mostrar há quanto tempo o backup não anda.
+function gravarBatimento(opcoes, { agora, ok }) {
+  const arquivo = join(dirname(opcoes.estado), 'ultimo-ciclo.json');
+  const ultimoOk = ok ? agora.toISOString() : lerUltimoOk(arquivo);
+  gravar(arquivo, `${JSON.stringify({ ultimoCiclo: agora.toISOString(), ultimoOk })}\n`);
 }
 
 function ciclo(opcoes, { avisar, agora }) {
