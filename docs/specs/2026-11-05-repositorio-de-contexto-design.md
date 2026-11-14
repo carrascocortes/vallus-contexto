@@ -294,7 +294,7 @@ principal não tira a etiqueta: ela muda quem pode ler o texto, não o que pode 
 ---
 atualizada: 2026-11-05T21:40-03:00
 por: claude-code · claude-opus-5-5          # ou codex · k3.1-pro, ou Dinesh (escritório) · codex · kimi-for-coding
-sessao: <id>                                 # o único campo onde o UUID é aceito (seção 4.5)
+sessao: <id>
 sessao_aberta: sim                           # bilhete, não trava (INV-C1)
 ---
 ## Onde parou
@@ -305,7 +305,9 @@ sessao_aberta: sim                           # bilhete, não trava (INV-C1)
 ```
 
 É o cursor da frente e o arquivo que salva o trabalho se a sessão cair: por isso se reescreve a cada marco, e não só no
-fim. O id da sessão, no campo `sessao:`, permite ao PO retomar a sessão da ferramenta se quiser; não é segredo. Na
+fim. O id da sessão, no campo `sessao:`, permite ao PO retomar a sessão da ferramenta se quiser; não é segredo. A linha
+é exatamente `sessao: <uuid>`, sem comentário: é o único campo onde o UUID é aceito (seção 4.5), aqui e na entrada da
+memória. Na
 frente do escritório, o escritório a reescreve ao fim de cada turno a partir das `pendencias` e do estado da mesa, para
 que uma sessão manual consiga pegar a frente. Ele a reescreve depois do commit da entrada: se a entrada foi retida, a
 passagem não leva o texto das `pendencias`, só a nota de que estão retidas (seção 4.3).
@@ -318,7 +320,7 @@ data: 2026-11-05T22:10-03:00
 autor: sessão manual                          # ou o personagem do escritório
 ferramenta: claude-code                       # o executor real: claude-code | codex; o personagem vai em autor
 modelo: claude-opus-5-5                       # o modelo observado, não o pedido
-sessao: <id>                                  # o único campo onde o UUID é aceito (seção 4.5)
+sessao: <id>
 desfecho: concluido                           # concluido | cortado | retido | migrado | registro (não é turno: a nota de visitante do adendo, 4.12)
 motivo:                                       # quando não é concluido: cota, prazo, disjuntor, suspensão, reinício, sessão morta
 ---
@@ -550,7 +552,8 @@ clone local e o GitHub guardam a versão vazada até lá: é por isso que o pre-
   - a tarefa fala com o GitHub só pela chave, com um `known_hosts` próprio na mesma pasta e sem ler o `~/.ssh`;
   - quando o push falha, inclusive por histórico divergente ou por regra do GitHub, ou quando a tarefa retém um commit,
     ela avisa o PO. O canal do aviso fica para a construção, mas tem de chegar ao PO, e não só a um log: com um commit
-    retido, só o PO destrava o backup;
+    retido, só o PO destrava o backup. Cada situação avisa uma vez por dia, mesmo que some e volte (DF-12), e a tarefa
+    grava a hora do último ciclo e a do último ciclo sem problema (DF-13);
   - a tarefa tem um disparo manual de teste, que empurra para o repositório descartável da F1, e nunca para o main, o
     que leva valor plantado (seção 6).
 - **Mudar o CI (QC12; escolha do Claude, vetável).** A F0 mostrou que o plano não tem regra de push por caminho: não há
@@ -864,6 +867,12 @@ conteúdo migrado.
   Criar tag não foi testado: o `so-main` é branch ruleset e não alcança tag, então, até o ruleset de tag da F1, a chave
   provavelmente cria tag apontando para um commit qualquer, e um workflow `on: push` sem filtro de branch roda nesse
   push.
+- **Código do clone no ciclo da tarefa** (aceito pelo PO em 08/11, DF-15): a tarefa roda `git` com o clone como pasta
+  de trabalho. Fora do Claude Code, o Windows procura o executável primeiro na pasta atual (o Claude Code define
+  `NoDefaultCurrentDirectoryInExePath`; o Agendador, não), então um `git.exe` solto na raiz do clone roda no lugar do
+  Git, com acesso à chave de deploy. Os hooks locais de push e a configuração local do Git (`url.*.insteadOf` reescreve
+  a URL explícita) também valem. Alcança o mesmo usuário (D3) e, porque `C:\dev` dá "Modificar" a todo usuário
+  autenticado, outro usuário do Windows desta máquina.
 - **Os rulesets dependem do plano Pro.** Em repositório privado de conta pessoal, rulesets só valem no Pro (seção 6). Se
   a conta voltar ao Free, eles deixam de valer, e a tela só avisa quando alguém a abre. O main fica protegido apenas
   pela trava da branch padrão contra deleção, e o push forçado e a branch nova passam. A tarefa não percebe a mudança.

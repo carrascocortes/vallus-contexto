@@ -70,4 +70,37 @@ Quem decidiu: escolha do Claude, vetável
 Toda situação que avisa (tarefa parada, push que falhou, commit retido) avisa uma vez por dia enquanto durar, e a
 tarefa só dá a situação por avisada se a notificação chegou. O log é `%USERPROFILE%\.vallus-contexto\empurrar.log`.
 Origem: revisão da tarefa agendada na execução da F1 (memoria/2026-11-07T03-30-claude-code-sessao-manual.md)
+Substituída por: DF-12
+
+## DF-12 · 2026-11-08 · Um aviso por situação por dia, mesmo que a situação some e volte
+Quem decidiu: PO
+Toda situação que avisa (tarefa parada, push que falhou, commit retido) avisa uma vez por dia. Se some e volta no mesmo
+dia, não avisa de novo; situação diferente avisa na hora. A tarefa só dá a situação por avisada se a notificação
+chegou. O log é `%USERPROFILE%\.vallus-contexto\empurrar.log`.
+Origem: revisão dos rulings da F1 (memoria/2026-11-14T01-00-claude-code-sessao-manual.md)
+Substituída por: —
+
+## DF-13 · 2026-11-08 · A tarefa grava a hora do último ciclo
+Quem decidiu: PO; o formato do arquivo é escolha do Claude, vetável
+A cada ciclo a tarefa grava em `%USERPROFILE%\.vallus-contexto\ultimo-ciclo.json` a hora do ciclo (`ultimoCiclo`) e a
+do último ciclo sem problema (`ultimoOk`). O escritório mostra "última sincronização há X h" na barra do topo, em
+âmbar depois de 6 h (projeto 2 do vallus-office). Assim aparece também a tarefa que parou de rodar, que não avisa nada,
+e o commit retido que espera o PO há mais de 6 h.
+Origem: revisão dos rulings da F1 (memoria/2026-11-14T01-00-claude-code-sessao-manual.md)
+Substituída por: —
+
+## DF-14 · 2026-11-08 · Carimbo de data e hora não conta como CNPJ
+Quem decidiu: PO
+Os 14 dígitos sem pontuação que formam data e hora válidas entre 2020 e 2039 (timestamps de migration), com o dia
+conferido pelo mês, não contam como CNPJ. Custo aceito: de 0,02% a 0,04% dos CNPJs numéricos escritos sem pontuação
+passam, quase todos de matriz (a filial 0001 vira "00:01"); em 14/11 o PO manteve o critério sem excluir o 0001. CNPJ
+pontuado e CNPJ com letra continuam barrados.
+Origem: revisão dos rulings da F1 (memoria/2026-11-14T01-00-claude-code-sessao-manual.md)
+Substituída por: —
+
+## DF-15 · 2026-11-08 · Código do clone no ciclo da tarefa: risco aceito
+Quem decidiu: PO
+A tarefa roda o Git com o clone como pasta de trabalho, e o que estiver no clone vale no ciclo dela (seção 7 da spec).
+O PO aceitou: "só eu uso essa máquina".
+Origem: revisão dos rulings da F1 (memoria/2026-11-14T01-00-claude-code-sessao-manual.md)
 Substituída por: —

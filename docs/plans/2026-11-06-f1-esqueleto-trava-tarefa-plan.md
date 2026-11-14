@@ -27,8 +27,8 @@ e este plano.
   `%USERPROFILE%\.vallus-contexto\bin\gitleaks.exe`, com o SHA-256 pinado em `ferramentas/gitleaks-8.30.1.sha256`.
   Sem o binário, a trava recusa todo commit. O download é do coordenador, com o ok do PO.
 - **D-F1-3. O aviso da tarefa ao PO é uma notificação do Windows**, mais uma linha no log
-  `%USERPROFILE%\.vallus-contexto\empurrar.log`. Cada situação avisa uma vez por dia enquanto durar (DF-11, que
-  substitui a primeira versão, em que só o commit retido reavisava). Uma prova real com o PO vendo a notificação entra nas Tarefas 10 e 11. O aviso de
+  `%USERPROFILE%\.vallus-contexto\empurrar.log`. Cada situação avisa uma vez por dia, mesmo que some e volte (DF-12,
+  que substitui a DF-11 e a primeira versão, em que só o commit retido reavisava). Uma prova real com o PO vendo a notificação entra nas Tarefas 10 e 11. O aviso de
   CI é o e-mail de falha de workflow que o GitHub manda a quem empurrou, que é o PO (o push pela chave aparece no nome
   dele).
 - **D-F1-4. Modelos em `modelos/`**, uma pasta que a seção 4.1 não tem. O `LEIA-ME` aponta para eles em vez de
@@ -90,7 +90,7 @@ e este plano.
 3. **A pasta das retidas não existe, é um arquivo ou não aceita gravação.** A trava recusa sem mover e diz isso; nunca
    deixa de barrar. Duas retidas com o mesmo nome não se sobrescrevem. Testes na Tarefa 5.
 4. **Rede caída, remoto vazio, remoto à frente, divergente ou com merge no meio.** A tarefa não empurra o que não deve,
-   avisa uma vez por situação e volta a avisar quando a situação some e reaparece. Testes na Tarefa 8.
+   avisa uma vez por situação por dia, mesmo que a situação some e volte (DF-12). Testes na Tarefa 8.
 5. **Arquivo renomeado, apagado ou com nome acentuado.** Renomeado: vale o nome e o conteúdo novos. Apagado: nada a
    conferir. Acentuado: recusado também no CI. Testes nas Tarefas 1 e 6.
 
