@@ -1,6 +1,10 @@
-const EMAILS_PERMITIDOS = new Set(['carrasco.cortes@gmail.com', 'git@github.com']);
+const EMAILS_PERMITIDOS = new Set([
+  'carrasco.cortes@gmail.com',
+  'git@github.com',
+  'noreply@anthropic.com',
+  'noreply@github.com',
+]);
 const DOMINIOS_DA_CASA = new Set(['vallusgrc.com.br', 'verusgrc.com.br']);
-const LOCAIS_SEM_PESSOA = new Set(['noreply', 'no-reply']);
 
 const PADROES_POR_FORMATO = [
   ['id-producao', /\bc[a-z0-9]{24}\b/g],
@@ -20,6 +24,13 @@ const PADROES_POR_FORMATO = [
 
 // Os tetos de tamanho mantêm a busca linear em linha longa sem arroba, sem esquema ou sem ponto.
 const CONEXAO_COM_SENHA = /(?<![A-Za-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\/[^\s:/@]*:[^\s@/]+@/gi;
+// A senha que é, inteira, um destes marcadores não é segredo: é o modelo de uma string de conexão.
+const SENHA_PLACEHOLDER = [
+  /^<[\p{L}_-]{1,30}>$/u,
+  /^\[[\p{L}_-]{1,30}\]$/u,
+  /^\$\{[A-Z_][A-Z0-9_]{0,63}\}$/,
+  /^\$[A-Z_]{1,64}$/,
+];
 const CANDIDATO_A_CPF = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g;
 const CANDIDATO_A_CNPJ = /\b[0-9A-Z]{2}\.?[0-9A-Z]{3}\.?[0-9A-Z]{3}\/?[0-9A-Z]{4}-?\d{2}\b/g;
 const CANDIDATO_A_EMAIL = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,10}/g;
@@ -68,13 +79,29 @@ function emailPermitido(email) {
   const minusculo = email.toLowerCase();
   if (EMAILS_PERMITIDOS.has(minusculo)) return true;
   const arroba = minusculo.lastIndexOf('@');
-  const local = minusculo.slice(0, arroba);
   const dominio = minusculo.slice(arroba + 1);
-  return LOCAIS_SEM_PESSOA.has(local) || DOMINIOS_DA_CASA.has(dominio) || dominio.endsWith('.noreply.github.com');
+  return DOMINIOS_DA_CASA.has(dominio) || dominio.endsWith('.noreply.github.com');
 }
 
 function ehEmailAlheio(email) {
   return ultimoRotuloTemLetra(email.slice(email.lastIndexOf('@') + 1)) && !emailPermitido(email);
+}
+
+function senhaEhPlaceholder(conexao) {
+  const senha = conexao.slice(conexao.indexOf(':', conexao.indexOf('://') + 3) + 1, -1);
+  return SENHA_PLACEHOLDER.some((regex) => regex.test(senha));
+}
+
+// Carimbo AAAAMMDDhhmmss (ex.: nome de migration): 14 dígitos que formam uma data e hora de 2020 a 2039.
+function ehCarimboDeDataHora(candidato) {
+  if (!/^\d{14}$/.test(candidato)) return false;
+  const [ano, mes, dia, hora, minuto, segundo] = [4, 2, 2, 2, 2, 2].map((tamanho, i, tamanhos) => {
+    const inicio = tamanhos.slice(0, i).reduce((a, b) => a + b, 0);
+    return Number(candidato.slice(inicio, inicio + tamanho));
+  });
+  if (ano < 2020 || ano > 2039 || mes < 1 || mes > 12 || dia < 1) return false;
+  if (dia > new Date(Date.UTC(ano, mes, 0)).getUTCDate()) return false;
+  return hora <= 23 && minuto <= 59 && segundo <= 59;
 }
 
 function ocorrencias(texto, regex) {
@@ -112,13 +139,15 @@ export function detectar(texto) {
   const registrar = (padrao, inicio) => achados.push({ padrao, linha: linhaDe(quebras, inicio) });
 
   const conexoes = ocorrencias(texto, CONEXAO_COM_SENHA);
-  for (const { inicio } of conexoes) registrar('conexao-com-senha', inicio);
+  for (const { inicio, trecho } of conexoes) {
+    if (!senhaEhPlaceholder(trecho)) registrar('conexao-com-senha', inicio);
+  }
 
   for (const { inicio, trecho } of ocorrencias(texto, CANDIDATO_A_CPF)) {
     if (cpfValido(trecho)) registrar('cpf', inicio);
   }
   for (const { inicio, trecho } of ocorrencias(texto, CANDIDATO_A_CNPJ)) {
-    if (cnpjValido(trecho)) registrar('cnpj', inicio);
+    if (!ehCarimboDeDataHora(trecho) && cnpjValido(trecho)) registrar('cnpj', inicio);
   }
 
   // Conexões e e-mails saem em ordem de posição e as conexões não se sobrepõem: um ponteiro basta.

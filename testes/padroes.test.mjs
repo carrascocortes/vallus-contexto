@@ -60,7 +60,6 @@ test('não barra e-mail permitido', () => {
     'alguem@verusgrc.com.br',
     'carrasco.cortes@gmail.com',
     'noreply@anthropic.com',
-    'no-reply@servico.exemplo.org',
     '123+nome@users.noreply.github.com',
     'git@github.com',
   ];
@@ -152,4 +151,50 @@ test('entrada hostil de 400 mil caracteres termina em menos de 2 s', () => {
     const duracao = performance.now() - inicio;
     assert.ok(duracao < 2000, `${nome} levou ${Math.round(duracao)} ms`);
   }
+});
+
+const montar = (...partes) => partes.join('');
+
+test('não barra string de conexão com placeholder no lugar da senha', () => {
+  const passam = [
+    'postgres://app:<senha>@db.exemplo.com:5432/x',
+    'postgresql://u:[senha]@host/db',
+    'mysql://root:${DB_PASSWORD}@127.0.0.1/x',
+    'redis://:$REDIS_PASS@localhost:6379',
+    'postgres://joao.silva:<senha>@empresa.com.br/db',
+  ];
+  for (const conexao of passam) assert.deepEqual(nomes(`url ${conexao}`), [], conexao);
+});
+
+test('barra conexão cuja senha só lembra um placeholder, e senha real em loopback', () => {
+  const barradas = {
+    'dígito no placeholder': montar('postgres', '://', 'app', ':', '<senha1>', '@', 'host/db'),
+    'placeholder de 31 letras': montar('postgres', '://', 'app', ':', '<', 'a'.repeat(31), '>', '@', 'host/db'),
+    'variável minúscula': montar('postgres', '://', 'app', ':', '$db_pass', '@', 'host/db'),
+    'variável entre chaves minúscula': montar('postgres', '://', 'app', ':', '${db_pass}', '@', 'host/db'),
+    'senha real em loopback': montar('postgres', '://', 'app', ':', gerar.conexaoComSenha().split(':')[2].split('@')[0], '@', '127.0.0.1:5432/db'),
+  };
+  for (const [nome, conexao] of Object.entries(barradas)) {
+    assert.deepEqual(nomes(`url ${conexao}`), ['conexao-com-senha'], nome);
+  }
+});
+
+test('noreply só passa nos dois endereços exatos', () => {
+  for (const email of ['noreply@anthropic.com', 'noreply@github.com', 'NoReply@GitHub.com']) {
+    assert.deepEqual(nomes(`autor ${email}`), [], email);
+  }
+  const alheios = [montar('no-reply', '@', 'servico.exemplo.org'), montar('noreply', '@', 'cliente', '.com.br'), montar('no-reply', '@', 'github.com')];
+  for (const email of alheios) assert.deepEqual(nomes(`autor ${email}`), ['email'], email);
+});
+
+test('carimbo de data e hora de 14 dígitos não conta como CNPJ', () => {
+  assert.deepEqual(nomes('migration 20261103120100'), []);
+  assert.deepEqual(nomes('migration 20261024120000'), []);
+});
+
+test('CNPJ de 14 dígitos fora da janela de data e hora continua barrado', () => {
+  assert.deepEqual(nomes('x ' + montar('11222333', '000181')), ['cnpj']);
+  assert.deepEqual(nomes('x ' + montar('20260230', '000016')), ['cnpj']);
+  const pontuado = montar('20', '.', '261', '.', '103', '/', '1201', '-', '00');
+  assert.deepEqual(nomes('x ' + pontuado), ['cnpj']);
 });

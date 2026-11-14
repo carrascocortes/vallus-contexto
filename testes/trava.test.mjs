@@ -61,9 +61,9 @@ function repoComTrava({ comHook = false } = {}) {
 
 const IDENTIDADE_DE_TESTE = {
   GIT_AUTHOR_NAME: 'teste',
-  GIT_AUTHOR_EMAIL: 'noreply@example.invalid',
+  GIT_AUTHOR_EMAIL: 'noreply@github.com',
   GIT_COMMITTER_NAME: 'teste',
-  GIT_COMMITTER_EMAIL: 'noreply@example.invalid',
+  GIT_COMMITTER_EMAIL: 'noreply@github.com',
 };
 
 function ambiente({ retidas, extra = {} }) {
@@ -820,7 +820,7 @@ test('mensagem de commit que não é UTF-8 válido é encoding-invalido', () => 
   const base = commitSemHook(contexto.repo, 'base');
   const arvore = git(['rev-parse', 'HEAD^{tree}'], { cwd: contexto.repo }).stdout.toString('utf8').trim();
   const bruto = Buffer.concat([
-    Buffer.from(`tree ${arvore}\nparent ${base}\nauthor t <noreply@example.invalid> 1 +0000\ncommitter t <noreply@example.invalid> 1 +0000\n\n`),
+    Buffer.from(`tree ${arvore}\nparent ${base}\nauthor t <noreply@github.com> 1 +0000\ncommitter t <noreply@github.com> 1 +0000\n\n`),
     Buffer.from('a\xe7\xe3o\n', 'latin1'),
   ]);
   const criado = git(['hash-object', '-t', 'commit', '-w', '--stdin'], { cwd: contexto.repo, input: bruto });
@@ -976,7 +976,7 @@ test('--push recusa o intervalo em que só o autor de um commit do meio é de fo
   assert.ok(!saida.includes(email));
 });
 
-test('o e-mail do PO, o noreply e o noreply do GitHub passam como autor e committer', () => {
+test('o e-mail do PO, o noreply da Anthropic e o do GitHub passam como autor e committer', () => {
   const contexto = repoComTrava();
   const base = commitSemHook(contexto.repo, 'base');
   commitSemHookComo(contexto.repo, identidade('carrasco.cortes@gmail.com'));
@@ -984,6 +984,17 @@ test('o e-mail do PO, o noreply e o noreply do GitHub passam como autor e commit
   const ultimo = commitSemHookComo(contexto.repo, identidade('12345+alguem@users.noreply.github.com'));
   assert.equal(trava(contexto, ['--commit', ultimo]).status, 0);
   assert.equal(trava(contexto, ['--push', base, ultimo]).status, 0);
+});
+
+test('noreply de domínio alheio é barrado como autor', () => {
+  const contexto = repoComTrava();
+  const base = commitSemHook(contexto.repo, 'base');
+  const email = 'noreply' + '@' + 'cliente' + '.com.br';
+  const ultimo = commitSemHookComo(contexto.repo, identidade(email));
+  const { status, saida } = trava(contexto, ['--push', base, ultimo]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /autor do commit: email/);
+  assert.ok(!saida.includes(email));
 });
 
 // --- índice inteiro ---

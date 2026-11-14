@@ -9,9 +9,9 @@ writeFileSync(configVazia, '');
 
 const identidade = {
   GIT_AUTHOR_NAME: 'teste',
-  GIT_AUTHOR_EMAIL: 'noreply@example.invalid',
+  GIT_AUTHOR_EMAIL: 'noreply@github.com',
   GIT_COMMITTER_NAME: 'teste',
-  GIT_COMMITTER_EMAIL: 'noreply@example.invalid',
+  GIT_COMMITTER_EMAIL: 'noreply@github.com',
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: configVazia,
   XDG_CONFIG_HOME: pastaConfigVazia,
