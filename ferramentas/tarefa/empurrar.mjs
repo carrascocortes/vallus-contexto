@@ -304,8 +304,9 @@ function lerUltimoOk(arquivo) {
   try {
     const { ultimoOk } = JSON.parse(readFileSync(arquivo, 'utf8'));
     return typeof ultimoOk === 'string' ? ultimoOk : null;
-  } catch {
-    return null;
+  } catch (erro) {
+    if (erro.code === 'ENOENT' || erro instanceof SyntaxError) return null;
+    throw erro;
   }
 }
 
@@ -354,7 +355,12 @@ function registrar(opcoes, { avisar, agora, chave, descricao }) {
   gravar(opcoes.estado, [...chaves].map((linha) => `${linha}\n`).join(''));
   const linhaDoCanal = canalFalhou ? `${agora.toISOString()} falha do canal de aviso\n` : '';
   gravar(opcoes.log, `${agora.toISOString()} ${descricao}\n${linhaDoCanal}`, { anexar: true });
-  gravarBatimento(opcoes, { agora, ok: chave === 'ok' });
+  try {
+    gravarBatimento(opcoes, { agora, ok: chave === 'ok' });
+  } catch {
+    // O batimento é só informativo: a falha vira linha no log e o ciclo segue com o mesmo código e os mesmos avisos.
+    gravar(opcoes.log, `${agora.toISOString()} falha ao gravar o batimento\n`, { anexar: true });
+  }
 }
 
 // A hora do último ciclo e do último ok, para o escritório mostrar há quanto tempo o backup não anda.

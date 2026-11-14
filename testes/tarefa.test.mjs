@@ -732,3 +732,14 @@ test('opção inválida não cria o arquivo de batimento', () => {
   assert.equal(main(argv, { avisar: () => 0 }), 2);
   assert.equal(existsSync(batimentoDe(c)), false);
 });
+
+test('falha ao gravar o batimento não derruba o ciclo: um aviso só, código do ciclo e linha no log', () => {
+  const c = cenario({ hooksPath: 'outro' });
+  mkdirSync(batimentoDe(c), { recursive: true });
+  commitar(c.clone, 'docs/a.md');
+  assert.equal(c.rodar(), 0);
+  assert.equal(c.avisos.length, 1);
+  assert.match(c.avisos[0].texto, /hook desligado/);
+  assert.match(readFileSync(c.log, 'utf8'), /^\S+ falha ao gravar o batimento$/m);
+  assert.doesNotMatch(readFileSync(c.log, 'utf8'), /erro inesperado/);
+});
