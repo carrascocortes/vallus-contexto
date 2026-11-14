@@ -22,11 +22,17 @@ function avisar(mensagem) {
   process.stderr.write(`trava: ${mensagem}\n`);
 }
 
+const DICA_DO_CORTE = ' (abaixo da linha de corte do git commit -v: a trava confere também o diff; faça o commit sem -v)';
+const DICA_DA_SESSAO = ' (a linha é exatamente "sessao: <uuid>", sem comentário nem espaço no fim)';
+// A linha que o git commit -v escreve antes do diff que anexa à mensagem.
+const LINHA_DE_CORTE = /^\S+ -{24} >8 -{24}\r?$/;
+
 // O caminho de nome barrado pode carregar o próprio valor: nunca é impresso.
-function descreverMensagem({ ref, linha, padrao }) {
+function descreverMensagem({ ref, linha, padrao, abaixoDoCorte }) {
   const commit = ref ? ` ${ref.slice(0, 7)}` : '';
   const onde = linha === undefined ? '' : `linha ${linha}: `;
-  return `mensagem de commit${commit}: ${onde}${padrao}`;
+  const dica = abaixoDoCorte ? DICA_DO_CORTE : '';
+  return `mensagem de commit${commit}: ${onde}${padrao}${dica}`;
 }
 
 function descreverIdentidade({ ref, papel, padrao }) {
@@ -34,11 +40,13 @@ function descreverIdentidade({ ref, papel, padrao }) {
   return `${papel} do commit: ${padrao}${commit}`;
 }
 
-function descrever({ caminho, linha, padrao, nomeBarrado, mensagem, papel, ref }) {
+function descrever(achado) {
+  const { caminho, linha, padrao, nomeBarrado, mensagem, papel, ref } = achado;
   if (papel) return descreverIdentidade({ ref, papel, padrao });
-  if (mensagem) return descreverMensagem({ ref, linha, padrao });
+  const dica = padrao === 'sessao-invalida' ? DICA_DA_SESSAO : '';
+  if (mensagem) return `${descreverMensagem(achado)}${dica}`;
   const onde = nomeBarrado ? '(arquivo de nome barrado)' : caminho;
-  return linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`;
+  return (linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`) + dica;
 }
 
 function comandoParaListarNomes(ref) {
@@ -63,7 +71,13 @@ function conferirCommit(sha) {
 // O Git passa ao commit-msg o arquivo com a mensagem inteira, inclusive as linhas de comentário que `-m` mantém.
 function conferirArquivoDeMensagem(arquivo) {
   if (!arquivo) throw new Error('falta o arquivo da mensagem');
-  return [...conferirIdentidadesDoCommitEmCurso(cwd), ...conferirMensagem(readFileSync(arquivo, 'utf8'))];
+  const texto = readFileSync(arquivo, 'utf8');
+  const corte = texto.split('\n').findIndex((linha) => LINHA_DE_CORTE.test(linha)) + 1;
+  // O arquivo inteiro continua conferido: com -m ou -F o Git não corta nessa linha. Só a mensagem do barramento muda.
+  const achados = conferirMensagem(texto).map((achado) =>
+    corte > 0 && achado.linha > corte ? { ...achado, abaixoDoCorte: true } : achado,
+  );
+  return [...conferirIdentidadesDoCommitEmCurso(cwd), ...achados];
 }
 
 function conferirArvore() {

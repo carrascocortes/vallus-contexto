@@ -743,6 +743,76 @@ test('--mensagem lê o arquivo e recusa arquivo ausente', () => {
   assert.equal(trava(contexto, ['--mensagem', join(pastaTemporaria(), 'nao-existe.txt')]).status, 2);
 });
 
+const LINHA_DE_CORTE_DO_GIT = `# ${'-'.repeat(24)} >8 ${'-'.repeat(24)}`;
+const DICA_DO_CORTE = /abaixo da linha de corte do git commit -v: a trava confere também o diff; faça o commit sem -v/;
+
+test('--mensagem: achado abaixo da linha de corte ganha a dica do commit -v, sem o valor', () => {
+  const contexto = repoComTrava();
+  const arquivo = join(pastaTemporaria(), 'msg.txt');
+  const id = gerar.uuid();
+  writeFileSync(arquivo, ['assunto limpo', '', LINHA_DE_CORTE_DO_GIT, 'diff --git a/x b/x', `+sessao: ${id}`, ''].join('\n'));
+  const { status, saida } = trava(contexto, ['--mensagem', arquivo]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, DICA_DO_CORTE);
+  assert.ok(!saida.includes(id));
+});
+
+test('--mensagem: o mesmo achado acima da linha de corte não ganha a dica', () => {
+  const contexto = repoComTrava();
+  const arquivo = join(pastaTemporaria(), 'msg.txt');
+  const id = gerar.uuid();
+  writeFileSync(arquivo, [`assunto com ${id}`, '', LINHA_DE_CORTE_DO_GIT, 'diff --git a/x b/x', '+limpo', ''].join('\n'));
+  const { status, saida } = trava(contexto, ['--mensagem', arquivo]);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /mensagem de commit: linha 1: uuid/);
+  assert.doesNotMatch(saida, DICA_DO_CORTE);
+  assert.ok(!saida.includes(id));
+});
+
+test('git commit -v com entrada nova válida é recusado com a dica da linha de corte', () => {
+  const contexto = repoComTrava({ comHook: true });
+  const pasta = pastaTemporaria();
+  const editor = join(pasta, 'editor.mjs');
+  writeFileSync(
+    editor,
+    [
+      "import { readFileSync, writeFileSync } from 'node:fs';",
+      'const arquivo = process.argv[2];',
+      "const linhas = readFileSync(arquivo, 'utf8').split('\\n');",
+      "linhas[0] = 'assunto limpo';",
+      "writeFileSync(arquivo, linhas.join('\\n'));",
+      '',
+    ].join('\n'),
+  );
+  gravar(contexto.repo, ENTRADA, [...cabecalhoDeEntrada(), 'texto limpo', ''].join('\n'));
+  adicionar(contexto.repo, ENTRADA);
+  const comando = `"${process.execPath.replaceAll('\\', '/')}" "${editor.replaceAll('\\', '/')}"`;
+  const resultado = spawnSync('git', ['-c', `core.editor=${comando}`, 'commit', '-v'], {
+    cwd: contexto.repo,
+    env: {
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: join(pasta, 'config'),
+      ...ambiente({ retidas: contexto.retidas }),
+    },
+    encoding: 'utf8',
+  });
+  const saida = `${resultado.stdout}${resultado.stderr}`;
+  assert.notEqual(resultado.status, 0, saida);
+  assert.equal(temCommit(contexto), false);
+  assert.match(saida, DICA_DO_CORTE);
+});
+
+test('linha sessao: com comentário no fim é barrada com a dica do formato, sem o UUID', () => {
+  const contexto = repoComTrava();
+  const id = gerar.uuid();
+  gravar(contexto.repo, 'docs/nota.md', `---\nsessao: ${id}  # comentário\n---\ntexto\n`);
+  adicionar(contexto.repo, 'docs/nota.md');
+  const { status, saida } = trava(contexto, ['--staged']);
+  assert.equal(status, 1, saida);
+  assert.match(saida, /docs\/nota\.md:2: sessao-invalida \(a linha é exatamente "sessao: <uuid>", sem comentário nem espaço no fim\)/);
+  assert.ok(!saida.includes(id));
+});
+
 test('--commit confere a mensagem de um commit feito com --no-verify', () => {
   const contexto = repoComTrava();
   const cpf = gerar.cpfValido();
