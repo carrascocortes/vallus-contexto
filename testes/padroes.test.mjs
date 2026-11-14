@@ -198,3 +198,16 @@ test('CNPJ de 14 dígitos fora da janela de data e hora continua barrado', () =>
   const pontuado = montar('20', '.', '261', '.', '103', '/', '1201', '-', '00');
   assert.deepEqual(nomes('x ' + pontuado), ['cnpj']);
 });
+
+test('senha real com arroba depois de um placeholder continua barrada', () => {
+  const real = gerar.conexaoComSenha().split(':')[2].split('@')[0];
+  const comHost = montar('postgres', '://', 'u', ':', '<x>', '@', 'b', ':', real, '@', 'host/db');
+  const comLocalhost = montar('postgres', '://', 'u', ':', '<x>', '@', 'b', ':', real, '@', 'localhost:5432');
+  assert.deepEqual(nomes(`url ${comHost}`), ['conexao-com-senha']);
+  assert.deepEqual(nomes(`url ${comLocalhost}`), ['conexao-com-senha']);
+});
+
+test('placeholder seguido de consulta ou sem caminho continua sem achado', () => {
+  assert.deepEqual(nomes('url postgres://u:<senha>@host/db?x=1'), []);
+  assert.deepEqual(nomes('url redis://:<x>@host'), []);
+});

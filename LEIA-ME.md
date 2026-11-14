@@ -31,7 +31,8 @@ Os formatos de cada arquivo estão em `modelos/`; copie de lá em vez de inventa
   (organização, registro ou usuário); texto escrito pelo cliente, nem citado. A empresa aparece só por pseudônimo
   estável. "O Parceiro A pediu a exportação" pode; o nome do usuário do parceiro, não. Vale também em nome de arquivo.
 - **Segredo:** chave, token, senha (também de conta de teste), conexão com senha, cookie, chave PEM, conteúdo de `.env`.
-- O id de sessão aceito é só o do campo `sessao:` do cabeçalho; em qualquer outro lugar é barrado. A linha é exatamente `sessao: <uuid>`, sem comentário nem espaço no fim.
+- O id de sessão aceito é só o do campo `sessao:` do cabeçalho; em qualquer outro lugar é barrado.
+  A linha é exatamente `sessao: <uuid>`, sem comentário nem espaço no fim.
 
 Prosa sobre cliente a trava não pega: a regra é sua. Em dúvida, deixe de fora.
 

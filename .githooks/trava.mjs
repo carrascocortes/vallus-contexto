@@ -31,8 +31,8 @@ const LINHA_DE_CORTE = /^\S+ -{24} >8 -{24}\r?$/;
 function descreverMensagem({ ref, linha, padrao, abaixoDoCorte }) {
   const commit = ref ? ` ${ref.slice(0, 7)}` : '';
   const onde = linha === undefined ? '' : `linha ${linha}: `;
-  const dica = abaixoDoCorte ? DICA_DO_CORTE : '';
-  return `mensagem de commit${commit}: ${onde}${padrao}${dica}`;
+  const dicaDoCorte = abaixoDoCorte ? DICA_DO_CORTE : '';
+  return `mensagem de commit${commit}: ${onde}${padrao}${dicaDoCorte}`;
 }
 
 function descreverIdentidade({ ref, papel, padrao }) {
@@ -43,10 +43,10 @@ function descreverIdentidade({ ref, papel, padrao }) {
 function descrever(achado) {
   const { caminho, linha, padrao, nomeBarrado, mensagem, papel, ref } = achado;
   if (papel) return descreverIdentidade({ ref, papel, padrao });
-  const dica = padrao === 'sessao-invalida' ? DICA_DA_SESSAO : '';
-  if (mensagem) return `${descreverMensagem(achado)}${dica}`;
+  const dicaDaSessao = padrao === 'sessao-invalida' ? DICA_DA_SESSAO : '';
+  if (mensagem) return `${descreverMensagem(achado)}${dicaDaSessao}`;
   const onde = nomeBarrado ? '(arquivo de nome barrado)' : caminho;
-  return (linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`) + dica;
+  return (linha === undefined ? `${onde}: ${padrao}` : `${onde}:${linha}: ${padrao}`) + dicaDaSessao;
 }
 
 function comandoParaListarNomes(ref) {

@@ -87,18 +87,18 @@ function ehEmailAlheio(email) {
   return ultimoRotuloTemLetra(email.slice(email.lastIndexOf('@') + 1)) && !emailPermitido(email);
 }
 
-function senhaEhPlaceholder(conexao) {
+// A conexão para no primeiro arroba: se outro arroba vem logo depois (até espaço ou barra), a senha era mais longa.
+function senhaEhPlaceholder(conexao, resto) {
+  if (/^[^\s/]*@/.test(resto)) return false;
   const senha = conexao.slice(conexao.indexOf(':', conexao.indexOf('://') + 3) + 1, -1);
   return SENHA_PLACEHOLDER.some((regex) => regex.test(senha));
 }
 
 // Carimbo AAAAMMDDhhmmss (ex.: nome de migration): 14 dígitos que formam uma data e hora de 2020 a 2039.
 function ehCarimboDeDataHora(candidato) {
-  if (!/^\d{14}$/.test(candidato)) return false;
-  const [ano, mes, dia, hora, minuto, segundo] = [4, 2, 2, 2, 2, 2].map((tamanho, i, tamanhos) => {
-    const inicio = tamanhos.slice(0, i).reduce((a, b) => a + b, 0);
-    return Number(candidato.slice(inicio, inicio + tamanho));
-  });
+  const partes = /^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)$/.exec(candidato);
+  if (partes === null) return false;
+  const [ano, mes, dia, hora, minuto, segundo] = partes.slice(1).map(Number);
   if (ano < 2020 || ano > 2039 || mes < 1 || mes > 12 || dia < 1) return false;
   if (dia > new Date(Date.UTC(ano, mes, 0)).getUTCDate()) return false;
   return hora <= 23 && minuto <= 59 && segundo <= 59;
@@ -139,8 +139,8 @@ export function detectar(texto) {
   const registrar = (padrao, inicio) => achados.push({ padrao, linha: linhaDe(quebras, inicio) });
 
   const conexoes = ocorrencias(texto, CONEXAO_COM_SENHA);
-  for (const { inicio, trecho } of conexoes) {
-    if (!senhaEhPlaceholder(trecho)) registrar('conexao-com-senha', inicio);
+  for (const { inicio, fim, trecho } of conexoes) {
+    if (!senhaEhPlaceholder(trecho, texto.slice(fim, fim + 400))) registrar('conexao-com-senha', inicio);
   }
 
   for (const { inicio, trecho } of ocorrencias(texto, CANDIDATO_A_CPF)) {
